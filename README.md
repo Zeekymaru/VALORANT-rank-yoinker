@@ -95,11 +95,13 @@ show `no recent comp games`.
 * Windows-only, and **unverified against the live API**: every unchecked endpoint/field is marked `# TODO(verify)` in
   `history.py`.
 * Uses the local client's tokens, like the rest of vRY. A 401, 403 or 404 means "unavailable" and is not worked around.
-* The 5-game sample costs one history request plus up to 5 match-detail requests per player. The **map record** asks
-  for a 20-game history instead (still one request) and fetches up to 5 more matches played on the lobby's map, so a
-  cold lobby can cost roughly twice as much. Turn it off with `"map_history": false` under `table` in `config.json`.
-  It relies on the history entries carrying a map ID (unverified); without one it is skipped and nothing extra is
-  fetched. Finished matches and per-player results are cached in `cache/` (git-ignored; it holds other players' IDs
+* The 5-game sample costs one history request plus up to 5 match-detail requests per player. The **map record** only
+  looks at those same 5 games (`LIST_DEPTH = 5` in `history.py`), so it costs nothing extra but is often empty
+  (`Ascent -`) or a single game. Raise `LIST_DEPTH` (e.g. to 20) to look further back: the history request stays one
+  request, but up to 5 more matches on the lobby's map are then fetched per player (`DEFAULT_MAP_MATCHES`), which
+  roughly doubles a cold lobby's requests. Turn the map line off with `"map_history": false` under `table` in
+  `config.json`. It relies on the history entries carrying a map ID (unverified); without one it is skipped and
+  nothing extra is fetched. Finished matches and per-player results are cached in `cache/` (git-ignored; it holds other players' IDs
   from match data). Agent roles come from a table in `history.py`; a new agent shows as `Unknown`
   until it is added.
 * Turn it off with `"lobby_history": false` in the `table` section of `config.json`.
@@ -108,6 +110,10 @@ show `no recent comp games`.
 * The **Party** column (same-colored squares mark players queued together) is switched on in this fork; set
   `"party": false` in the `table` section of `config.json` to hide it again. Not verified live yet.
 * Tests: `pip install -r requirements-dev.txt`, then `pytest`.
+* Optional TUI dependencies (the TUI itself is not built yet): after `pip install -r requirements.txt`, run
+  `pip install -r requirements-tui.txt` for Textual, or `requirements-tui-charts.txt` to also get `textual-plotext`
+  charts. They **upgrade `rich` and `Pygments` past the pins in `requirements.txt`** (Textual needs `rich>=14.2` and
+  `Pygments>=2.19.2`), so a separate venv for the TUI keeps the console app's pinned versions untouched.
 
 ## What about that Tweet?
 

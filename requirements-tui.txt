@@ -1,0 +1,9 @@
+# Optional: Textual, for the TUI. Install AFTER requirements.txt (the two files disagree on rich/Pygments,
+# so they can't be given to pip in one command):
+#   pip install -r requirements.txt
+#   pip install -r requirements-tui.txt
+# rich and Pygments are overridden here because Textual needs rich>=14.2.0 and Pygments>=2.19.2, while
+# requirements.txt pins rich==13.5.1 and Pygments==2.15.1. Use a separate venv to keep those pins.
+textual==8.2.8
+rich==15.0.0
+Pygments==2.21.0

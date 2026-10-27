@@ -113,13 +113,27 @@ ASCENT = "/Game/Maps/Ascent/Ascent"
 TRIAD = "/Game/Maps/Triad/Triad"
 
 
-@pytest.fixture
-def deep_http():
+def deep_routes():
     """Seven-match history; match-7 is deliberately not routable (must never be fetched)."""
-    routes = routes_for(fixture("history_deep.json"),
-                        {"match-1": "match-1.json", "match-2": "match-2.json", "match-3": "match-3.json",
-                         "match-4": "match-2.json", "match-5": "match-2.json", "match-6": "match-6.json"})
-    return FakeHttp(routes)
+    return routes_for(fixture("history_deep.json"),
+                      {"match-1": "match-1.json", "match-2": "match-2.json", "match-3": "match-3.json",
+                       "match-4": "match-2.json", "match-5": "match-2.json", "match-6": "match-6.json"})
+
+
+@pytest.fixture
+def deep_http(monkeypatch):
+    """The deep history with LIST_DEPTH raised to 20, as when looking further back for a map."""
+    monkeypatch.setattr(history, "LIST_DEPTH", 20)
+    return FakeHttp(deep_routes())
+
+
+def test_default_map_lookup_stays_within_the_recent_sample(roles, tmp_path):
+    http = FakeHttp(deep_routes())
+    summary = run_summary(http, roles, tmp_path, map_id=ASCENT)
+    assert http.params[0]["endIndex"] == 5  # LIST_DEPTH defaults to the sample size
+    assert summary["map"] == {"games": 2, "wins": 2}  # only match-1 and match-3 are in the 5 newest
+    assert len(http.calls) == 6  # one list request + the 5 sampled matches, nothing extra
+    assert details_url("match-6") not in http.calls
 
 
 def test_map_record_asks_for_a_longer_history_and_fetches_only_that_map(deep_http, roles, tmp_path):

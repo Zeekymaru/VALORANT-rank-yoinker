@@ -1,0 +1,5 @@
+# Optional: everything in requirements-tui.txt plus textual-plotext for real line/bar charts in the TUI.
+# Without it the TUI falls back to Textual's built-in Sparkline and text bars.
+-r requirements-tui.txt
+textual-plotext==1.0.1
+plotext==5.3.2
