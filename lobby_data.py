@@ -200,17 +200,38 @@ _DEMO_PLAYERS = [
 ]
 
 
+def _demo_match_stats(seed, role, won, rounds):
+    """Plausible per-match counts, shaped by role so the demo radars differ between players."""
+    import random
+    rng = random.Random(seed)
+    duel, util = role == "Duelist", role in ("Controller", "Sentinel", "Initiator")
+    kills = round(rounds * rng.uniform(0.5, 0.95) * (1.15 if duel else 1.0) * (1.1 if won else 0.9))
+    deaths = round(rounds * rng.uniform(0.55, 0.85))
+    return {"rounds": rounds, "score": round(rounds * rng.uniform(150, 270) * (1.1 if won else 0.9)),
+            "kills": kills, "deaths": deaths, "assists": round(rounds * rng.uniform(0.1, 0.35)),
+            "damage": round(rounds * rng.uniform(110, 170) * (1.1 if duel else 1.0)),
+            "headshots": round(kills * 1.4), "bodyshots": round(kills * 3.2), "legshots": round(kills * 0.3),
+            "first_bloods": round(rounds * rng.uniform(0.05, 0.2 if duel else 0.1)),
+            "first_deaths": round(rounds * rng.uniform(0.04, 0.16 if duel else 0.1)),
+            "kast_rounds": round(rounds * rng.uniform(0.6, 0.82)),
+            "casts": round(rounds * rng.uniform(2.0, 4.5 if util else 2.5)),
+            "plants": rng.randint(0, 3), "defuses": rng.randint(0, 1)}
+
+
 def _demo_summary(history_rows, agent_ids):
     """Build a history.summarise()-shaped dict from compact demo tuples."""
     import history
+    import match_stats
     matches, agents, roles, wins = [], {}, {}, 0
     atk = [0, 0]
     dfn = [0, 0]
     for agent, won, map_key, a, d, rr in history_rows:
         agent_id = agent_ids[agent]
+        role = history.AGENT_ROLES.get(agent_id, history.UNKNOWN_ROLE)
         matches.append({"id": f"demo-{len(matches)}", "agent": agent_id, "won": won,
                         "map": f"/game/maps/{map_key}/{map_key}", "attack": list(a), "defense": list(d),
-                        "rr": rr})
+                        "rr": rr, "stats": _demo_match_stats(f"{agent}{len(matches)}{a}{d}", role, won,
+                                                             a[1] + d[1] or 20)})
         stats = agents.setdefault(agent_id, [0, 0])
         stats[0] += 1
         stats[1] += int(won)
@@ -225,7 +246,7 @@ def _demo_summary(history_rows, agent_ids):
     return {"available": True, "games": len(matches), "wins": wins, "roles": roles,
             "top_agents": [{"agent_id": a, "games": g, "wins": w} for a, (g, w) in top],
             "attack": {"won": atk[0], "rounds": atk[1]}, "defense": {"won": dfn[0], "rounds": dfn[1]},
-            "matches": matches}
+            "matches": matches, "stats": match_stats.total([m["stats"] for m in matches])}
 
 
 class DemoSource:

@@ -304,6 +304,22 @@ def test_a_crashing_source_is_reported_instead_of_taking_the_screen_down():
     asyncio.run(main())
 
 
+def test_profile_graph_draws_the_radar_for_the_selected_player():
+    async def scenario(app, pilot):
+        await pilot.press("6")
+        await pilot.pause(0.2)
+        assert app.graph == "profile"
+        assert "Zikeyo#ivun — Profile" in text_of(app.query_one("#graph-title", Static))
+        first = text_of(app.query_one("#g-profile", Static))
+        assert "Profile vs" in first and "Consistency" in first and "●" in first
+        await pilot.press("down")
+        await pilot.pause(0.1)
+        assert text_of(app.query_one("#g-profile", Static)) != first
+        assert "Echo#09110 — Profile" in text_of(app.query_one("#graph-title", Static))
+
+    run(scenario)
+
+
 def test_the_app_works_without_textual_plotext(monkeypatch):
     monkeypatch.setattr(tui, "PlotextPlot", None)
 

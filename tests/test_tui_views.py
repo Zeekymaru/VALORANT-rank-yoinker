@@ -185,3 +185,51 @@ def test_team_stats_and_views():
 def history_rank(tier):
     from lobby_data import rank_label
     return rank_label(tier)[0]
+
+
+def _stats(**overrides):
+    base = {"games": 3, "rounds": 60, "score": 12000, "kills": 40, "deaths": 36, "assists": 12, "damage": 9000,
+            "headshots": 20, "bodyshots": 60, "legshots": 20, "first_bloods": 6, "first_deaths": 5,
+            "kast_rounds": 44, "casts": 150, "plants": 1, "defuses": 1}
+    base.update(overrides)
+    return base
+
+
+def _with_stats(**overrides):
+    data = summary(stats=_stats(**overrides))
+    for match in data["matches"]:
+        match["stats"] = {"score": 4000, "rounds": 20}
+    return data
+
+
+def test_profile_view_ranks_the_selected_player_within_the_lobby():
+    rows = [loaded_row(puuid="p1", history=_with_stats()),
+            loaded_row(puuid="p2", history=_with_stats(damage=12000, kast_rounds=55)),
+            loaded_row(puuid="p3", history=history._unavailable())]
+    text = tui_views.profile_view(rows, "p1").plain
+    assert text.startswith("Profile vs 2 players in this lobby · 3 games, 60 rounds")
+    assert all(label in text for label, _ in tui_views.profile.AXES)
+    assert "ADR 150" in text and "KAST 73%" in text and "ACS 200" in text and "40/36/12" in text
+    assert "●" in text and "Few games" not in text
+    assert "Few games" in tui_views.profile_view(
+        [loaded_row(puuid="p1", history=_with_stats(games=2))], "p1").plain
+
+
+def test_profile_view_explains_missing_data():
+    assert "No player selected" in plain(tui_views.profile_view([], "x"))
+    assert "unavailable" in plain(tui_views.profile_view([loaded_row(history=history._unavailable())], "p"))
+    assert "Loading" in plain(tui_views.profile_view([loaded_row(history_state="pending", history=None)], "p"))
+    legacy = loaded_row()  # a summary cached before performance counts existed
+    assert "fills in on the next refresh" in plain(tui_views.profile_view([legacy], "p"))
+
+
+def test_radar_canvas_marks_each_known_axis_and_the_ring():
+    text = tui_views.radar_canvas([1.0, 0.5, 0.2, None, 0.8, 0.5]).plain
+    assert text.count("●") == 5 and "·" in text and "+" in text
+    assert all(label in text for label, _ in tui_views.profile.AXES)
+
+
+def test_card_shows_a_performance_line_when_stats_exist():
+    lines = tui_views.recent_block(_with_stats(), NAMES, "").plain.splitlines()
+    assert "ACS 200 · ADR 150 · K/D 1.11 · KAST 73%" in lines
+    assert not any(line.startswith("ACS") for line in tui_views.recent_block(summary(), NAMES, "").plain.splitlines())

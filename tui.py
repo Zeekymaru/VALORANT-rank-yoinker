@@ -17,8 +17,8 @@ from textual.css.query import NoMatches
 from textual.widgets import Button, ContentSwitcher, DataTable, Footer, Static
 
 from lobby_data import DemoSource, LobbyModel, Status
-from tui_views import (COLUMNS, GRAPHS, agents_view, card_text, form_view, row_cells, rr_series, rr_view, sides_view,
-                       team_strip, teams_view)
+from tui_views import (COLUMNS, GRAPHS, agents_view, card_text, form_view, profile_view, row_cells, rr_series, rr_view,
+                       sides_view, team_strip, teams_view)
 
 try:  # optional: real charts for the RR trend (pip install -r requirements-tui-charts.txt)
     from textual_plotext import PlotextPlot
@@ -326,6 +326,9 @@ class LobbyApp(App):
         label = dict(GRAPHS)[self.graph]
         if self.graph == "teams":
             title, renderable = "Lobby", teams_view(self.model.ordered)
+        elif self.graph == "profile":
+            title = f"{row.name} — {label}" if row else label
+            renderable = profile_view(self.model.ordered, self.selected)
         elif row is None:
             title, renderable = label, Text("No player selected yet.", style="dim")
         else:

@@ -117,13 +117,22 @@ An interactive Textual screen next to the console app (`main.py` is untouched). 
 side panel switches between five graphs with the buttons or the 1-5 keys: **Form** (last games, newest first, with
 agent, map, side rounds and RR), **Atk/Def** (the team's round win rate per side), **Agents** (wins-losses per agent
 and the role split), **Teams** (your team vs the enemy side by side) and **RR trend** (a sparkline, or a line chart
-if `textual-plotext` is installed). Arrow keys pick the player the graph is about, `r` reloads, `q` quits.
+if `textual-plotext` is installed) and **Profile** (key 6, see below). Arrow keys pick the player the graph is about, `r` reloads, `q` quits.
 
 The left side has two views, switched with `v` or the **View** button. **List** is one compact line per player.
 **Cards** shows each player as a card (identity, rank, season stats and the full Recent block), your team and the
 enemy team in separate sections, three cards per row on a wide terminal. In the card view the arrow keys move
 between cards and clicking a card selects it. The selected player is shared between the views, and the graph panel
 follows it.
+
+**Profile** is a radar chart of six axes for the selected player: Aim (ADR and headshot %), Entry (first bloods minus
+first deaths), Survival (KAST), Utility (ability casts per round), Objective (plants and defuses per game) and
+Consistency (how steady their score is between games). Each axis is the player's **percentile among the players in this
+lobby**, so the dotted ring is the middle of the lobby and a point outside it beats most of the lobby; it isn't an
+absolute skill rating, and the same player can look different in another lobby. It rests on the same 5 games as
+the rest, so with fewer than 3 games it is drawn dimmed. Cards also get an `ACS · ADR · K/D · KAST` line. All of it comes
+from match details already fetched (`match_stats.py`, `player_profile.py`); there are no extra requests. Summaries
+cached before this existed show "fills in on the next refresh".
 
 Use a **separate venv**: Textual needs `rich>=14.2` and `Pygments>=2.19.2`, while `requirements.txt` pins older ones.
 

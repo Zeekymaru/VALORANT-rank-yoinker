@@ -1,17 +1,20 @@
-"""Rich renderables for the TUI: the players-table cells and the five graph views.
+"""Rich renderables for the TUI: the players-table cells and the six graph views.
 
 Pure functions with no Textual import, so they can be checked through their plain text.
 Everything here reads PlayerRow / history.summarise() data and never touches the network."""
+import math
 from itertools import accumulate
 
 from rich.table import Table
 from rich.text import Text
 
 import history
+import player_profile as profile
 from lobby_data import ALLY_RGB, ENEMY_RGB, SELF_RGB, party_rgb, rank_label, readable_rgb
 from src.constants import AGENTCOLORLIST
 
-GRAPHS = [("form", "Form"), ("sides", "Atk/Def"), ("agents", "Agents"), ("teams", "Teams"), ("rr", "RR trend")]
+GRAPHS = [("form", "Form"), ("sides", "Atk/Def"), ("agents", "Agents"), ("teams", "Teams"), ("rr", "RR trend"),
+          ("profile", "Profile")]
 COLUMNS = ["", "Agent", "Name", "Rank", "RR", "Peak", "HS", "WR", "Lvl", "ΔRR", "Recent", "Form"]
 BAR_WIDTH = 20
 SPARK = "▁▂▃▄▅▆▇█"
@@ -163,6 +166,7 @@ def recent_block(summary, agent_names, map_name=""):
         Sova 1-0 · Skye 0-1 · Viper 1-0
         Init2 Ctrl1 Duel1 Sent1
         Atk 53% (32) · Def 48% (31)
+        ACS 227 · ADR 150 · K/D 1.08 · KAST 75%   (once match stats are cached)
         Ascent 2-1
     """
     if not _usable(summary):
@@ -181,6 +185,11 @@ def recent_block(summary, agent_names, map_name=""):
     if sides is not None:
         text.append("\n")
         text.append_text(sides)
+    perf = profile.derive(summary)
+    if perf is not None and perf["acs"] is not None:
+        parts = [f"ACS {perf['acs']:.0f}", f"ADR {_fmt(perf['adr'], '.0f')}", f"K/D {_fmt(perf['kd'], '.2f')}",
+                 f"KAST {_fmt(None if perf['kast'] is None else perf['kast'] * 100, '.0f')}%"]
+        text.append("\n" + " · ".join(parts), style=DIM)
     record = summary.get("map")
     if map_name and record is not None:
         if record["games"]:
@@ -408,3 +417,103 @@ def team_strip(rows):
                  f"{s['premades']} premade{'s' if s['premades'] != 1 else ''}"]
         lines.append(f"{label:<11}" + " · ".join(parts))
     return Text("\n".join(lines))
+
+
+# --- profile radar ------------------------------------------------------------------------
+
+RADAR_RX, RADAR_RY = 13, 6  # outer ring radius in cells; x is doubled so the shape looks round in a terminal
+CYAN = (90, 200, 230)
+
+
+def _line(canvas, a, b, char, style):
+    (x0, y0), (x1, y1) = a, b
+    steps = max(abs(x1 - x0), abs(y1 - y0), 1)
+    for i in range(steps + 1):
+        x, y = round(x0 + (x1 - x0) * i / steps), round(y0 + (y1 - y0) * i / steps)
+        if canvas[y][x][0] in " ·":
+            canvas[y][x] = (char, style)
+
+
+def radar_canvas(values, dimmed=False):
+    """Radar of axis values (0..1 or None) as a Text. The dotted ring is the middle of the lobby (0.5)."""
+    labels = [label for label, _ in profile.AXES]
+    pad = max(len(label) for label in labels) + 1
+    width, height = 2 * (RADAR_RX + pad) + 1, 2 * RADAR_RY + 3
+    cx, cy = width // 2, height // 2
+    canvas = [[(" ", "")] * width for _ in range(height)]
+
+    def point(index, fraction):
+        angle = math.pi / 2 - 2 * math.pi * index / len(labels)
+        return round(cx + RADAR_RX * fraction * math.cos(angle)), round(cy - RADAR_RY * fraction * math.sin(angle))
+
+    for step in range(72):  # reference ring
+        angle = 2 * math.pi * step / 72
+        x, y = round(cx + RADAR_RX * 0.5 * math.cos(angle)), round(cy - RADAR_RY * 0.5 * math.sin(angle))
+        canvas[y][x] = ("·", DIM)
+    canvas[cy][cx] = ("+", DIM)
+    style = "dim " + rgb_style(CYAN) if dimmed else "bold " + rgb_style(CYAN)
+    known = [(i, v) for i, v in enumerate(values) if v is not None]
+    ring = [point(i, v) for i, v in known]
+    if len(ring) > 1:
+        for a, b in zip(ring, ring[1:] + ring[:1]):
+            _line(canvas, a, b, "•", style)
+    for p in ring:
+        canvas[p[1]][p[0]] = ("●", style)
+    for index, label in enumerate(labels):
+        x, y = point(index, 1.0)
+        x = x + 2 if x > cx else x - 2 - len(label) + 1 if x < cx else x - len(label) // 2
+        y = y - 1 if y < cy else y + 1 if y > cy else y
+        for offset, char in enumerate(label):
+            if 0 <= x + offset < width:
+                canvas[y][x + offset] = (char, "" if values[index] is not None else DIM)
+    text = Text()
+    for row in canvas:
+        for char, style_ in row:
+            text.append(char, style=style_ or None)
+        text.append("\n")
+    return text
+
+
+def _fmt(value, spec, missing="—"):
+    return missing if value is None else format(value, spec)
+
+
+def profile_view(rows, selected):
+    """Radar and numbers for rows[selected] (a PlayerRow), ranked among every row with history in the lobby."""
+    row = next((r for r in rows if r.puuid == selected), None)
+    if row is None:
+        return Text("No player selected yet.", style=DIM)
+    summary = row.history if row.history_state == "done" else None
+    if not _usable(summary):
+        return _no_history(summary)
+    profiles = {r.puuid: profile.derive(r.history) for r in rows if r.history_state == "done"}
+    mine = profiles.get(selected)
+    if mine is None:
+        return Text("Per-match performance isn't in this cached summary yet; it fills in on the next refresh.",
+                    style=DIM)
+    axes = profile.radar_axes(profiles)[selected]
+    compared = sum(1 for p in profiles.values() if p)
+    dimmed = mine["games"] < profile.DIM_BELOW_GAMES
+    text = Text(f"Profile vs {compared} player{'s' if compared != 1 else ''} in this lobby · "
+                f"{mine['games']} game{'s' if mine['games'] != 1 else ''}, {mine['rounds']} rounds\n", style="bold")
+    text.append("ring = lobby middle · outside it = above most of the lobby\n", style=DIM)
+    if dimmed:
+        text.append("Few games: treat this shape as a rough guess.\n", style=DIM)
+    text.append_text(radar_canvas([axes[label] for label, _ in profile.AXES], dimmed))
+    detail = {
+        "Aim": f"ADR {_fmt(mine['adr'], '.0f')} · HS {_fmt(None if mine['hs'] is None else mine['hs'] * 100, '.0f')}%",
+        "Entry": f"FB {_fmt(None if mine['first_blood'] is None else mine['first_blood'] * 100, '.0f')}%"
+                 f" · FD {_fmt(None if mine['first_death'] is None else mine['first_death'] * 100, '.0f')}% of rounds",
+        "Survival": f"KAST {_fmt(None if mine['kast'] is None else mine['kast'] * 100, '.0f')}%",
+        "Utility": f"{_fmt(mine['util'], '.1f')} casts/round",
+        "Objective": f"{_fmt(mine['objective'], '.1f')} plants+defuses/game",
+        "Consistency": "score spread between games" if mine["consistency"] is not None else "needs 2+ games",
+    }
+    for label, _ in profile.AXES:
+        value = axes[label]
+        text.append(f"{label:<12}")
+        text.append(bar(value if value is not None else 0, 10) if value is not None else "··········", style=rgb_style(CYAN))
+        text.append(f" {_fmt(None if value is None else value * 100, '3.0f', '  —')}  {detail[label]}\n")
+    text.append(f"\nACS {_fmt(mine['acs'], '.0f')} · K/D {_fmt(mine['kd'], '.2f')} · "
+                f"{_fmt(mine['kills'], 'd')}/{_fmt(mine['deaths'], 'd')}/{_fmt(mine['assists'], 'd')}")
+    return text
