@@ -11,6 +11,7 @@ from prettytable import PrettyTable
 from alive_progress import alive_bar
 from io import TextIOWrapper
 from json.decoder import JSONDecodeError
+import history
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -508,6 +509,7 @@ try:
     log(f"gotten agent dict: {agent_dict}")
     seasonID = get_latest_season_id(content)
     log(f"gotten season id: {seasonID}")
+    agent_roles = history.load_role_map()
     lastGameState = ""
 
     while True:
@@ -584,7 +586,7 @@ try:
                                                         puuid)
                         if lastTeam != player['TeamID']:
                             if lastTeamBoolean:
-                                addRowTable(table, ["-", "-", "-", "-", "-", "-", "-", "-", "-"])
+                                addRowTable(table, ["-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-"])
                         lastTeam = player['TeamID']
                         lastTeamBoolean = True
                         PLcolor = level_to_color(player_level)
@@ -620,7 +622,9 @@ try:
                                             rr,
                                             peakRank,
                                             leaderboard,
-                                            level
+                                            level,
+                                            *history.format_columns(history.summarise(
+                                                player["Subject"], pd_url, get_headers(), agent_roles), agent_dict)
                                             ])
                         bar()
             elif game_state == "PREGAME":
@@ -706,6 +710,8 @@ try:
                                             peakRank,
                                             leaderboard,
                                             level,
+                                            *history.format_columns(history.summarise(
+                                                player["Subject"], pd_url, get_headers(), agent_roles), agent_dict)
                                             ])
                         bar()
             if game_state == "MENUS":
@@ -756,14 +762,16 @@ try:
                                             rr,
                                             peakRank,
                                             leaderboard,
-                                            level
+                                            level,
+                                            " - ", " - ", " - "  # no lobby history in menus
                                             ])
                         # table.add_rows([])
                         bar()
             if (title := game_state_dict.get(game_state)) is None:
                 exit(1)
             table.title = f"Valorant status: {title}"
-            table.field_names = ["Party", "Agent", "Name", "Skin", "Rank", "RR", "Peak Rank", "pos.", "Level"]
+            table.field_names = ["Party", "Agent", "Name", "Skin", "Rank", "RR", "Peak Rank", "pos.", "Level",
+                                "Top agents", "Win rate", "Roles"]
             print(table)
             print(f"VALORANT rank yoinker v{version}")
         if cooldown == 0:
