@@ -77,13 +77,17 @@ If you want to make a small change to the application, you can:
 
 ## Lobby history (experimental)
 
-One extra **Recent** column for each player in the lobby (INGAME and PREGAME), three lines per player:
+One extra **Recent** column for each player in the lobby (INGAME and PREGAME), up to five lines per player:
 
 ```
-60% 3/5                      win rate and sample size (colored like the WR column)
-Sova 1-0 · Skye 1-0 · Viper 1-0   top 3 agents in those matches, as wins-losses with each agent
-Init2 Ctrl1 Duel1 Sent1           games per role (not wins), across all the sampled matches
+60% 3/5                           win rate and sample size over the last 5 competitive games
+Sova 1-0 · Skye 1-0 · Viper 1-0   top 3 agents in those games, as wins-losses with each agent
+Init2 Ctrl1 Duel1 Sent1           games per role (not wins), across all the sampled games
+Atk 54% (32) · Def 48% (31)       the player's team's round win rate on each side (rounds played)
+Ascent 2-1                        wins-losses on the current map (see below)
 ```
+
+The attack/defense line is the team's rounds in those games, not the player's own stats.
 
 Players whose history is private or unavailable show `history unavailable`; players with no recent competitive games
 show `no recent comp games`.
@@ -91,8 +95,12 @@ show `no recent comp games`.
 * Windows-only, and **unverified against the live API**: every unchecked endpoint/field is marked `# TODO(verify)` in
   `history.py`.
 * Uses the local client's tokens, like the rest of vRY. A 401, 403 or 404 means "unavailable" and is not worked around.
-* At most 5 matches per player. Finished matches and per-player results are cached in `cache/` (git-ignored; it holds
-  other players' IDs from match data). Agent roles come from a table in `history.py`; a new agent shows as `Unknown`
+* The 5-game sample costs one history request plus up to 5 match-detail requests per player. The **map record** asks
+  for a 20-game history instead (still one request) and fetches up to 5 more matches played on the lobby's map, so a
+  cold lobby can cost roughly twice as much. Turn it off with `"map_history": false` under `table` in `config.json`.
+  It relies on the history entries carrying a map ID (unverified); without one it is skipped and nothing extra is
+  fetched. Finished matches and per-player results are cached in `cache/` (git-ignored; it holds other players' IDs
+  from match data). Agent roles come from a table in `history.py`; a new agent shows as `Unknown`
   until it is added.
 * Turn it off with `"lobby_history": false` in the `table` section of `config.json`.
 * Riot's API policy (see below) applies here too. Whether other players' match history counts as data the client hides

@@ -35,7 +35,9 @@ def _log(message):
 CACHE_DIR = "cache"  # created at runtime, ignored by git
 DEFAULT_TTL_SECONDS = 6 * 60 * 60
 NEGATIVE_TTL_SECONDS = 5 * 60  # "unavailable" results are re-checked sooner
-DEFAULT_MAX_MATCHES = 5
+DEFAULT_MAX_MATCHES = 5  # recent matches sampled per player (win rate, agents, roles, sides)
+LIST_DEPTH = 20  # history entries asked for when a map record is wanted (still one request per player)
+DEFAULT_MAP_MATCHES = 5  # at most this many matches on the lobby's map are fetched for the map record
 REQUEST_TIMEOUT = 10
 TOP_AGENT_COUNT = 3
 UNAVAILABLE_TEXT = "history unavailable"
@@ -64,6 +66,19 @@ MATCH_DETAILS_PATH = "/match-details/v1/matches/{match_id}"
 # vRY 2.94 reads "Matches" and "MatchID" from competitiveupdates (see above).
 HISTORY_LIST_FIELD = "Matches"
 HISTORY_MATCH_ID_FIELD = "MatchID"
+# TODO(verify): each competitiveupdates entry carries the map id in this field,
+# in the same path style as the lobby's MapID (e.g. /Game/Maps/Triad/Triad).
+# If it is missing the map record is skipped and no extra matches are fetched.
+HISTORY_MAP_FIELD = "MapID"
+# Seen in 81 cached live match files (2026-10-27): matchInfo.mapId, and per round
+# winningTeam plus winningTeamRole ("Attacker" / "Defender").
+DETAILS_INFO_FIELD = "matchInfo"
+INFO_MAP_FIELD = "mapId"
+DETAILS_ROUNDS_FIELD = "roundResults"
+ROUND_WINNER_FIELD = "winningTeam"
+ROUND_WINNER_ROLE_FIELD = "winningTeamRole"
+ROLE_ATTACKER = "Attacker"
+ROLE_DEFENDER = "Defender"
 # "players" and "subject" are read by vRY 2.94 (src/player_stats.py). The
 # fields below (teamId, characterId, teams[].teamId, teams[].won) produced
 # sensible agents, roles and win rates in a live run on 2026-10-27, but were
@@ -169,22 +184,33 @@ def match_ids_for(puuid, pd_url, headers, *, max_matches=DEFAULT_MAX_MATCHES, ht
     Returns None if the history is unavailable (401/403/404 or any failure),
     and [] if the history is reachable but empty.
     """
+    entries = match_entries_for(puuid, pd_url, headers, depth=max_matches, http_get=http_get)
+    return None if entries is None else [entry["id"] for entry in entries]
+
+
+def match_entries_for(puuid, pd_url, headers, *, depth=DEFAULT_MAX_MATCHES, http_get=None):
+    """[{"id": match id, "map": lowercase map id or None}, ...], newest first, at most `depth`.
+
+    One request. None if unavailable (401/403/404 or any failure), [] if empty.
+    """
     if not _SAFE_ID.match(str(puuid)):
         return None
     data = _get_json(
         pd_url + HISTORY_PATH.format(puuid=puuid),
         headers,
-        params={"startIndex": 0, "endIndex": max_matches, "queue": HISTORY_QUEUE},
+        params={"startIndex": 0, "endIndex": depth, "queue": HISTORY_QUEUE},
         http_get=http_get,
     )
     if not isinstance(data, dict) or not isinstance(data.get(HISTORY_LIST_FIELD), list):
         return None
-    ids = []
+    entries = []
     for entry in data[HISTORY_LIST_FIELD]:
         if not isinstance(entry, dict) or not isinstance(entry.get(HISTORY_MATCH_ID_FIELD), str):
             continue
-        ids.append(entry[HISTORY_MATCH_ID_FIELD])
-    return ids[:max_matches]
+        map_id = entry.get(HISTORY_MAP_FIELD)
+        entries.append({"id": entry[HISTORY_MATCH_ID_FIELD],
+                        "map": map_id.lower() if isinstance(map_id, str) and map_id else None})
+    return entries[:depth]
 
 
 def match_details(match_id, pd_url, headers, *, cache_dir=None, http_get=None):
@@ -206,7 +232,7 @@ def match_details(match_id, pd_url, headers, *, cache_dir=None, http_get=None):
 
 
 def _player_result(puuid, details):
-    """(agent_id, won) for this player in one match, or None.
+    """{"agent", "won", "map", "sides"} for this player in one match, or None.
 
     None when the player isn't in the match or the outcome can't be told
     (team missing or no boolean "won"); such matches are left out of the sample.
@@ -221,30 +247,68 @@ def _player_result(puuid, details):
     team = next((t for t in teams if t.get(TEAM_ID_FIELD) == me.get(PLAYER_TEAM_FIELD)), None)
     if team is None or not isinstance(team.get(TEAM_WON_FIELD), bool):
         return None
-    return str(me[PLAYER_AGENT_FIELD]).lower(), team[TEAM_WON_FIELD]
+    info = details.get(DETAILS_INFO_FIELD)
+    map_id = info.get(INFO_MAP_FIELD) if isinstance(info, dict) else None
+    return {
+        "agent": str(me[PLAYER_AGENT_FIELD]).lower(),
+        "won": team[TEAM_WON_FIELD],
+        "map": map_id.lower() if isinstance(map_id, str) and map_id else None,
+        "sides": _side_rounds(me.get(PLAYER_TEAM_FIELD), details),
+    }
+
+
+def _side_rounds(team_id, details):
+    """{"Attacker": [won, played], "Defender": [won, played]} for team_id's rounds.
+
+    A round's winning team and the role it won as are given; the other team had
+    the opposite role and lost. Rounds missing either field are left out.
+    """
+    sides = {ROLE_ATTACKER: [0, 0], ROLE_DEFENDER: [0, 0]}
+    for rnd in details.get(DETAILS_ROUNDS_FIELD) or []:
+        if not isinstance(rnd, dict):
+            continue
+        winner, role = rnd.get(ROUND_WINNER_FIELD), rnd.get(ROUND_WINNER_ROLE_FIELD)
+        if not winner or role not in sides:
+            continue
+        mine = winner == team_id
+        my_role = role if mine else (ROLE_DEFENDER if role == ROLE_ATTACKER else ROLE_ATTACKER)
+        sides[my_role][1] += 1
+        sides[my_role][0] += int(mine)
+    return sides
 
 
 def _aggregate(results, agent_roles):
     if not results:
         return _unavailable(REASON_NO_RESULT)
-    agents = Counter(agent for agent, _ in results)
-    agent_wins = Counter(agent for agent, won in results if won)
-    roles = Counter(agent_roles.get(agent, UNKNOWN_ROLE) for agent, _ in results)
+    agents = Counter(r["agent"] for r in results)
+    agent_wins = Counter(r["agent"] for r in results if r["won"])
+    roles = Counter(agent_roles.get(r["agent"], UNKNOWN_ROLE) for r in results)
     # results are newest first and sorted() is stable, so ties go to the most recent agent
     top = sorted(agents.items(), key=lambda kv: -kv[1])[:TOP_AGENT_COUNT]
+
+    def side_total(role):
+        return {"won": sum(r["sides"][role][0] for r in results),
+                "rounds": sum(r["sides"][role][1] for r in results)}
+
     return {
         "available": True,
         "games": len(results),
-        "wins": sum(1 for _, won in results if won),
+        "wins": sum(1 for r in results if r["won"]),
         "top_agents": [{"agent_id": agent, "games": games, "wins": agent_wins[agent]}
                        for agent, games in top],
         "roles": dict(roles),
+        "attack": side_total(ROLE_ATTACKER),
+        "defense": side_total(ROLE_DEFENDER),
     }
 
 
-def _summarise(puuid, pd_url, headers, agent_roles, max_matches, ttl, cache_dir, now, http_get):
+def _summarise(puuid, pd_url, headers, agent_roles, max_matches, ttl, cache_dir, now, http_get,
+               map_id, map_matches):
     now_ts = (now or time.time)()
-    path = _cache_path(cache_dir, "players", f"{puuid}.json") if _SAFE_ID.match(str(puuid)) else None
+    map_key = map_id.lower() if isinstance(map_id, str) and map_id else None
+    # The map record differs per map, so each (player, map) gets its own cached summary.
+    name = f"{puuid}--{re.sub(r'[^a-z0-9]+', '_', map_key).strip('_')}" if map_key else str(puuid)
+    path = _cache_path(cache_dir, "players", f"{name}.json") if _SAFE_ID.match(str(puuid)) else None
     cached = _read_json(path) if path else None
     if isinstance(cached, dict) and isinstance(cached.get("summary"), dict):
         age = now_ts - cached.get("fetched_at", float("-inf"))
@@ -252,23 +316,32 @@ def _summarise(puuid, pd_url, headers, agent_roles, max_matches, ttl, cache_dir,
         if 0 <= age < limit:
             return cached["summary"]
 
-    ids = match_ids_for(puuid, pd_url, headers, max_matches=max_matches, http_get=http_get)
-    results = []
+    depth = max(max_matches, LIST_DEPTH) if map_key else max_matches
+    entries = match_entries_for(puuid, pd_url, headers, depth=depth, http_get=http_get)
     fetch_failed = False
-    for match_id in ids or []:
-        details = match_details(match_id, pd_url, headers, cache_dir=cache_dir, http_get=http_get)
-        if details is None:
-            fetch_failed = True
-            continue
-        result = _player_result(puuid, details)
-        if result is not None:
-            results.append(result)
-    if ids is None:
+    by_id = {}  # match id -> this player's result (None if unusable), for matches fetched so far
+
+    def result_for(match_id):
+        nonlocal fetch_failed
+        if match_id not in by_id:
+            details = match_details(match_id, pd_url, headers, cache_dir=cache_dir, http_get=http_get)
+            if details is None:
+                fetch_failed = True
+            by_id[match_id] = None if details is None else _player_result(puuid, details)
+        return by_id[match_id]
+
+    if entries is None:
         summary = _unavailable(REASON_UNAVAILABLE)
-    elif not ids:
+    elif not entries:
         summary = _unavailable(REASON_NO_GAMES)
     else:
-        summary = _aggregate(results, agent_roles or {})
+        recent = [result_for(entry["id"]) for entry in entries[:max_matches]]
+        summary = _aggregate([r for r in recent if r is not None], agent_roles or {})
+        if summary["available"] and map_key and any(entry["map"] for entry in entries):
+            on_map = [entry for entry in entries if entry["map"] == map_key][:map_matches]
+            results = [result_for(entry["id"]) for entry in on_map]
+            results = [r for r in results if r is not None and r["map"] in (None, map_key)]
+            summary["map"] = {"games": len(results), "wins": sum(1 for r in results if r["won"])}
     # Don't pin a partial sample (some match fetches failed) for the full TTL.
     if path and not fetch_failed:
         _write_json(path, {"fetched_at": now_ts, "summary": summary})
@@ -276,18 +349,28 @@ def _summarise(puuid, pd_url, headers, agent_roles, max_matches, ttl, cache_dir,
 
 
 def summarise(puuid, pd_url, headers, agent_roles, *, max_matches=DEFAULT_MAX_MATCHES,
-              ttl=DEFAULT_TTL_SECONDS, cache_dir=None, now=None, http_get=None):
+              ttl=DEFAULT_TTL_SECONDS, cache_dir=None, now=None, http_get=None,
+              map_id=None, map_matches=DEFAULT_MAP_MATCHES):
     """Summary of a player's recent competitive matches. Never raises.
 
     {"available": bool, "games": int, "wins": int,
-     "top_agents": [{"agent_id": str, "games": int}, ...], "roles": {role: games}}
+     "top_agents": [{"agent_id": str, "games": int, "wins": int}, ...],
+     "roles": {role: games},
+     "attack": {"won": int, "rounds": int}, "defense": {"won": int, "rounds": int}}
 
     "games" is the sample size: matches where the player was found and the
     result was known. Others are skipped. Unavailable, private or empty
-    history gives available=False.
+    history gives available=False. "attack"/"defense" are the player's team's
+    rounds won/played on each side across those matches.
+
+    With map_id (the lobby's map), the history list is requested LIST_DEPTH
+    deep (still one request) and up to map_matches matches on that map are
+    fetched, adding "map": {"games": int, "wins": int}. If the list entries
+    carry no map id, "map" is left out and nothing extra is fetched.
     """
     try:
-        return _summarise(puuid, pd_url, headers, agent_roles, max_matches, ttl, cache_dir, now, http_get)
+        return _summarise(puuid, pd_url, headers, agent_roles, max_matches, ttl, cache_dir, now, http_get,
+                          map_id, map_matches)
     except Exception as exc:
         _log(f"summary failed for a player: {exc!r}")
         return _unavailable()
@@ -311,29 +394,54 @@ def _agent_label(name, games, wins=None):
     return f"{name} {wins}-{games - wins}"
 
 
-def format_cell(summary, agent_names, wr_color=None, dim=None):
-    """One compact table cell, three lines: win rate, top agents, roles.
+def _percent(won, played):
+    return int(100 * won / played + 0.5)
 
-        60% 3/5
-        Sova 1-0 · Skye 0-1 · Viper 1-0
-        Init2 Ctrl1 Duel1 Sent1
 
-    The agent line is wins-losses per agent; the roles line is games per role.
+def format_cell(summary, agent_names, wr_color=None, dim=None, map_name=None):
+    """One compact table cell:
+
+        60% 3/5                          win rate over the sampled games
+        Sova 1-0 · Skye 0-1 · Viper 1-0  wins-losses per agent (top 3)
+        Init2 Ctrl1 Duel1 Sent1          games per role
+        Atk 54% (32) · Def 48% (31)      round win rate on each side (rounds played)
+        Ascent 2-1                       wins-losses on the lobby's map (map_name given)
+
+    The attack/defense and map lines appear only when the summary has them.
 
     agent_names maps lowercase agent ID -> display name (main.py's agent_dict).
-    wr_color(percent, text) -> str colors the whole "60% 3/5" text, and
-    dim(text) -> str mutes the secondary lines. Both are optional styling
-    hooks (main.py passes colour helpers); plain text is used without them.
+    wr_color(percent, text) -> str colors a win-rate text, and dim(text) -> str
+    mutes the secondary lines. Both are optional styling hooks (main.py passes
+    colour helpers); plain text is used without them.
     """
     wr_color = wr_color or (lambda percent, text: text)
     dim = dim or str
     if not summary.get("available"):
         return dim(NO_GAMES_TEXT if summary.get("reason") == REASON_NO_GAMES else UNAVAILABLE_TEXT)
     games, wins = summary["games"], summary["wins"]
-    percent = int(100 * wins / games + 0.5)
+    percent = _percent(wins, games)
     rate = wr_color(percent, f"{percent}% {wins}/{games}")
     agents = " · ".join(_agent_label(agent_names.get(a["agent_id"], "Unknown"), a["games"], a.get("wins"))
                         for a in summary["top_agents"])
     roles = " ".join(f"{ROLE_SHORT.get(role, role)}{n}" for role, n in
                      sorted(summary["roles"].items(), key=lambda kv: (-kv[1], kv[0])))
-    return f"{rate}\n{agents}\n{dim(roles)}"
+    lines = [rate, agents, dim(roles)]
+
+    if "attack" in summary and "defense" in summary:
+        def side(label, record):
+            rounds = record["rounds"]
+            if not rounds:
+                return f"{label} -"
+            pct = _percent(record["won"], rounds)
+            return f"{label} {wr_color(pct, f'{pct}% ({rounds})')}"
+
+        lines.append(f"{side('Atk', summary['attack'])} · {side('Def', summary['defense'])}")
+
+    record = summary.get("map")
+    if map_name and record is not None:
+        if record["games"]:
+            lines.append(wr_color(_percent(record["wins"], record["games"]),
+                                  f"{map_name} {record['wins']}-{record['games'] - record['wins']}"))
+        else:
+            lines.append(dim(f"{map_name} -"))
+    return "\n".join(lines)

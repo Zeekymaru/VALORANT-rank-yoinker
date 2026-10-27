@@ -1,0 +1,14 @@
+{
+  "matchInfo": {"mapId": "/Game/Maps/Ascent/Ascent"},
+  "players": [
+    {"subject": "p-target", "teamId": "Blue", "characterId": "agent-omen"},
+    {"subject": "p-other", "teamId": "Red", "characterId": "agent-jett"}
+  ],
+  "teams": [
+    {"teamId": "Red", "won": true},
+    {"teamId": "Blue", "won": false}
+  ],
+  "roundResults": [
+    {"roundNum": 0, "winningTeam": "Red", "winningTeamRole": "Attacker"}
+  ]
+}

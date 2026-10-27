@@ -34,9 +34,11 @@ class FakeHttp:
     def __init__(self, routes):
         self.routes = routes
         self.calls = []
+        self.params = []
 
     def __call__(self, url, headers=None, params=None, timeout=None):
         self.calls.append(url)
+        self.params.append(params)
         if url not in self.routes:
             raise AssertionError(f"unexpected request: {url}")
         status, payload = self.routes[url]
@@ -80,13 +82,16 @@ def test_normal_aggregation(standard_http, roles, tmp_path):
     assert summary["top_agents"] == [{"agent_id": "agent-jett", "games": 2, "wins": 1},
                                      {"agent_id": "agent-sage", "games": 1, "wins": 1}]
     assert summary["roles"] == {"Duelist": 2, "Sentinel": 1}
+    # rounds of the player's own team: match-1 atk 1/2 def 1/1, match-2 atk 0/1 def 0/1, match-3 def 2/3
+    assert summary["attack"] == {"won": 1, "rounds": 3}
+    assert summary["defense"] == {"won": 3, "rounds": 5}
 
 
 def test_win_rate_and_sample_size(standard_http, roles, tmp_path):
     summary = run_summary(standard_http, roles, tmp_path)
     assert (summary["games"], summary["wins"]) == (3, 2)
     cell = history.format_cell(summary, {"agent-jett": "Jett", "agent-sage": "Sage"})
-    assert cell == "67% 2/3\nJett 1-1 · Sage 1-0\nDuel2 Sent1"
+    assert cell == "67% 2/3\nJett 1-1 · Sage 1-0\nDuel2 Sent1\nAtk 33% (3) · Def 60% (5)"
 
 
 def test_summary_cached_before_per_agent_wins_still_renders():
@@ -99,8 +104,74 @@ def test_summary_cached_before_per_agent_wins_still_renders():
 def test_cell_styling_hooks(standard_http, roles, tmp_path):
     summary = run_summary(standard_http, roles, tmp_path)
     cell = history.format_cell(summary, {}, wr_color=lambda pct, text: f"<{pct}:{text}>", dim=lambda text: f"[{text}]")
-    assert cell.splitlines() == ["<67:67% 2/3>", "Unknown 1-1 · Unknown 1-0", "[Duel2 Sent1]"]
+    assert cell.splitlines() == ["<67:67% 2/3>", "Unknown 1-1 · Unknown 1-0", "[Duel2 Sent1]",
+                                 "Atk <33:33% (3)> · Def <60:60% (5)>"]
     assert history.format_cell(history._unavailable(), {}, dim=lambda text: f"[{text}]") == "[history unavailable]"
+
+
+ASCENT = "/Game/Maps/Ascent/Ascent"
+TRIAD = "/Game/Maps/Triad/Triad"
+
+
+@pytest.fixture
+def deep_http():
+    """Seven-match history; match-7 is deliberately not routable (must never be fetched)."""
+    routes = routes_for(fixture("history_deep.json"),
+                        {"match-1": "match-1.json", "match-2": "match-2.json", "match-3": "match-3.json",
+                         "match-4": "match-2.json", "match-5": "match-2.json", "match-6": "match-6.json"})
+    return FakeHttp(routes)
+
+
+def test_map_record_asks_for_a_longer_history_and_fetches_only_that_map(deep_http, roles, tmp_path):
+    summary = run_summary(deep_http, roles, tmp_path, map_id=ASCENT)
+    assert deep_http.params[0]["endIndex"] == history.LIST_DEPTH  # still a single list request
+    assert deep_http.calls.count(history_url()) == 1
+    assert summary["games"] == 5  # the recent sample is unchanged: the 5 newest matches
+    assert summary["map"] == {"games": 3, "wins": 2}  # match-1 W, match-3 W, match-6 L
+    assert details_url("match-6") in deep_http.calls  # older than the sample, fetched for the map record
+    assert details_url("match-7") not in deep_http.calls  # not on the map and outside the sample
+
+
+def test_map_matches_cap_limits_extra_fetches(deep_http, roles, tmp_path):
+    summary = run_summary(deep_http, roles, tmp_path, map_id=ASCENT, map_matches=2)
+    assert summary["map"] == {"games": 2, "wins": 2}
+    assert details_url("match-6") not in deep_http.calls
+
+
+def test_without_a_map_id_the_history_is_not_extended(standard_http, roles, tmp_path):
+    summary = run_summary(standard_http, roles, tmp_path)
+    assert standard_http.params[0]["endIndex"] == history.DEFAULT_MAX_MATCHES
+    assert "map" not in summary
+
+
+def test_history_entries_without_a_map_field_skip_the_map_record(standard_http, roles, tmp_path):
+    summary = run_summary(standard_http, roles, tmp_path, map_id=ASCENT)
+    assert "map" not in summary
+    assert len(standard_http.calls) == 4  # list + the 3 recent matches, nothing extra
+
+
+def test_map_summaries_are_cached_per_map(deep_http, roles, tmp_path):
+    kwargs = dict(map_matches=3)
+    on_ascent = run_summary(deep_http, roles, tmp_path, map_id=ASCENT, **kwargs)
+    on_triad = run_summary(deep_http, roles, tmp_path, map_id=TRIAD, **kwargs)
+    assert on_ascent["map"] == {"games": 3, "wins": 2}
+    assert on_triad["map"] == {"games": 3, "wins": 0}  # match-2, -4, -5 are all losses
+    assert run_summary(deep_http, roles, tmp_path, map_id=ASCENT, **kwargs) == on_ascent
+    assert deep_http.calls.count(history_url()) == 2  # the repeat Ascent lookup came from the cache
+
+
+def test_map_line_in_the_cell(deep_http, roles, tmp_path):
+    summary = run_summary(deep_http, roles, tmp_path, map_id=ASCENT)
+    assert history.format_cell(summary, {}).splitlines()[-1].startswith("Atk ")  # no map name, no map line
+    assert history.format_cell(summary, {}, map_name="Ascent").splitlines()[-1] == "Ascent 2-1"
+    summary["map"] = {"games": 0, "wins": 0}
+    assert history.format_cell(summary, {}, map_name="Ascent").splitlines()[-1] == "Ascent -"
+
+
+def test_rounds_without_a_winner_or_role_are_ignored():
+    details = {"roundResults": [{"winningTeam": "Red"}, {"winningTeamRole": "Attacker"}, "junk",
+                                {"winningTeam": "Red", "winningTeamRole": "Attacker"}]}
+    assert history._side_rounds("Red", details) == {"Attacker": [1, 1], "Defender": [0, 0]}
 
 
 def test_win_rate_color_is_always_readable_on_a_dark_background():

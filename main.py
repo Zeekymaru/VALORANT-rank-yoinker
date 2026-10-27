@@ -121,18 +121,20 @@ try:
 
     history.set_log_sink(log)
 
-    def history_cell(player_subject):
-        # "Recent" cell (win rate, top agents, roles) for one player (experimental, see history.py)
+    def history_cell(player_subject, lobby_map_id=None):
+        # "Recent" cell (win rate, agents, roles, sides, map) for one player (experimental, see history.py)
         if not cfg.table.get("lobby_history", True):
             return ""
+        map_id = lobby_map_id if cfg.table.get("map_history", True) else None
         summary = history.summarise(
-            player_subject, Requests.pd_url, Requests.get_headers(), history.AGENT_ROLES
+            player_subject, Requests.pd_url, Requests.get_headers(), history.AGENT_ROLES, map_id=map_id
         )
         cell = history.format_cell(
             summary,
             agent_dict,
             wr_color=lambda percent, text: color(text, fore=history.win_rate_rgb(percent)),
             dim=lambda text: color(text, fore=(130, 130, 130)),
+            map_name=map_urls.get(map_id.lower()) if map_id else None,
         )
         return cell + "\n "  # blank line so stacked rows don't run together
 
@@ -679,7 +681,7 @@ try:
                                 kd,
                                 level,
                                 ranked_rating_earned,
-                                history_cell(player["Subject"]),
+                                history_cell(player["Subject"], coregame_stats.get("MapID")),
                             ]
                         )
 
@@ -937,7 +939,7 @@ try:
                                 kd,
                                 level,
                                 ranked_rating_earned,
-                                history_cell(player["Subject"]),
+                                history_cell(player["Subject"], pregame_stats.get("MapID")),
                             ]
                         )
 

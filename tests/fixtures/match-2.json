@@ -1,4 +1,5 @@
 {
+  "matchInfo": {"mapId": "/Game/Maps/Triad/Triad"},
   "players": [
     {"subject": "p-target", "teamId": "Blue", "characterId": "agent-jett"},
     {"subject": "p-other", "teamId": "Red", "characterId": "agent-omen"}
@@ -6,5 +7,9 @@
   "teams": [
     {"teamId": "Red", "won": true},
     {"teamId": "Blue", "won": false}
+  ],
+  "roundResults": [
+    {"roundNum": 0, "winningTeam": "Red", "winningTeamRole": "Attacker"},
+    {"roundNum": 1, "winningTeam": "Red", "winningTeamRole": "Defender"}
   ]
 }

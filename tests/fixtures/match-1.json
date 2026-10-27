@@ -1,4 +1,5 @@
 {
+  "matchInfo": {"mapId": "/Game/Maps/Ascent/Ascent"},
   "players": [
     {"subject": "p-target", "teamId": "Red", "characterId": "AGENT-JETT"},
     {"subject": "p-other", "teamId": "Blue", "characterId": "agent-sage"}
@@ -6,5 +7,10 @@
   "teams": [
     {"teamId": "Red", "won": true},
     {"teamId": "Blue", "won": false}
+  ],
+  "roundResults": [
+    {"roundNum": 0, "winningTeam": "Red", "winningTeamRole": "Attacker"},
+    {"roundNum": 1, "winningTeam": "Blue", "winningTeamRole": "Defender"},
+    {"roundNum": 2, "winningTeam": "Red", "winningTeamRole": "Defender"}
   ]
 }

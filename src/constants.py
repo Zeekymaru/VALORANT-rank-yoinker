@@ -206,7 +206,8 @@ DEFAULT_CONFIG = {
         "kd": False,
         "level": True,
         "lobby_history": True,
-        "party": True
+        "party": True,
+        "map_history": True
     },
     "flags": {
         "last_played": True,

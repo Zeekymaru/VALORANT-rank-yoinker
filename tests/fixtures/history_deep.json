@@ -1,0 +1,11 @@
+{
+  "Matches": [
+    {"MatchID": "match-1", "MapID": "/Game/Maps/Ascent/Ascent"},
+    {"MatchID": "match-2", "MapID": "/Game/Maps/Triad/Triad"},
+    {"MatchID": "match-3", "MapID": "/Game/Maps/Ascent/Ascent"},
+    {"MatchID": "match-4", "MapID": "/Game/Maps/Triad/Triad"},
+    {"MatchID": "match-5", "MapID": "/Game/Maps/Triad/Triad"},
+    {"MatchID": "match-6", "MapID": "/Game/Maps/Ascent/Ascent"},
+    {"MatchID": "match-7", "MapID": "/Game/Maps/Triad/Triad"}
+  ]
+}
