@@ -151,6 +151,20 @@ the rest, so with fewer than 3 games it is drawn dimmed. Cards also get an `ACS 
 from match details already fetched (`match_stats.py`, `player_profile.py`); there are no extra requests. Summaries
 cached before this existed show "fills in on the next refresh".
 
+**Saved lobbies.** Each agent-select and in-game lobby is saved automatically (once its ranks and history have loaded,
+and again when it ends or you quit), so you can look at it after the game. Press **`h`** for the list, newest first
+(when, result, map, mode, your agent and both teams' average rank), **Enter** to open one, **`l`** to go back to the
+live lobby (`r` also goes back). A saved lobby opens in the same list, cards and graphs, with a coloured banner while
+you're looking at it; the live lobby keeps loading behind it.
+
+* The **result** (`W 13-10 +21`) isn't known during the game. It is filled in from *your own* match history the next
+  time that history loads (the next lobby you open), so it costs no extra requests and can be a game behind.
+  Unverified: it assumes the lobby's match id is the one your history lists.
+* A saved lobby is exactly what was on screen, so streamer mode's hidden names stay hidden. The files are local
+  (`cache/lobbies/`, git-ignored), contain other players' names and match data, and are never uploaded; delete the
+  folder to clear them. The newest 200 are kept. `--demo` saves to `cache/lobbies-demo/` instead.
+* Menus (party) screens aren't saved, and a lobby you weren't running the TUI for can't be recovered afterwards.
+
 Use a **separate venv**: Textual needs `rich>=14.2` and `Pygments>=2.19.2`, while `requirements.txt` pins older ones.
 
 ```
@@ -167,6 +181,7 @@ venv-tui\Scripts\python.exe tui.py            the live lobby (VALORANT must be r
 * It polls the client's presence every 2 seconds for the game state, and leaves out the skin column, Discord status
   and the mobile web server. Rank, HS, WR, level, ΔRR, party squares and the history data come from the same code as
   the console table. The lobby history settings above (`lobby_history`, `map_history`) apply here too.
+* **Saved lobbies:** see below.
 * Not built yet: sorting and filtering.
 
 ## What about that Tweet?

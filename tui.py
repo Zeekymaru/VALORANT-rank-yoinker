@@ -6,7 +6,9 @@
 Needs the optional requirements: pip install -r requirements-tui.txt (charts: requirements-tui-charts.txt).
 The console app (main.py) is untouched and still works as before."""
 import argparse
+import os
 import threading
+import time
 
 from rich.text import Text
 from textual import work
@@ -14,13 +16,16 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
+from textual.screen import ModalScreen
 from textual.widgets import Button, ContentSwitcher, DataTable, Footer, Static
 
-from lobby_data import DemoSource, LobbyModel, Status
+import history
+import lobby_store
+from lobby_data import DemoSource, LobbyModel, LobbyReset, Status
 import player_profile
 from tui_views import (COLUMNS, GRAPHS, LOBBY_GRAPHS, agents_view, card_text, fingerprint, form_view, heat_view,
                        lobby_axes, profile_view, row_cells, rr_series, rr_view, scatter_caption, scatter_fallback,
-                       scatter_points, sides_view, team_strip, teams_view, _few_games)
+                       scatter_points, sides_view, team_stats, team_strip, teams_view, _few_games)
 
 try:  # optional: real charts for the RR trend (pip install -r requirements-tui-charts.txt)
     from textual_plotext import PlotextPlot
@@ -76,12 +81,71 @@ class CardView(VerticalScroll):
             grid.styles.grid_size_columns = self.columns
 
 
+class HistoryScreen(ModalScreen):
+    """The saved lobbies, newest first. Enter opens one; Escape or h closes."""
+
+    BINDINGS = [Binding("escape", "close", "Close"), Binding("h", "close", "Close", show=False)]
+    DEFAULT_CSS = """
+    HistoryScreen { align: center middle; }
+    #history-box { width: 92%; max-width: 130; height: 80%; border: round $accent; background: $surface; padding: 0 1; }
+    #history-title { height: 1; text-style: bold; margin-bottom: 1; }
+    #history-table { height: 1fr; }
+    """
+    COLUMNS = ("When", "Result", "Map", "Mode", "Stage", "You", "Your team", "Enemy team")
+
+    def __init__(self, entries, **kwargs):
+        super().__init__(**kwargs)
+        self.entries = entries
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="history-box"):
+            yield Static(f"Saved lobbies ({len(self.entries)}) · Enter opens one · Esc closes", id="history-title")
+            if self.entries:
+                yield DataTable(id="history-table", cursor_type="row", zebra_stripes=True)
+            else:
+                yield Static("Nothing saved yet. A lobby is saved automatically once its ranks and history have "
+                             "loaded, and when it ends.", id="history-empty")
+
+    def on_mount(self):
+        if not self.entries:
+            return
+        table = self.query_one("#history-table", DataTable)
+        table.add_columns(*self.COLUMNS)
+        for entry in self.entries:
+            summary = entry["summary"]
+            table.add_row(time.strftime("%d %b %H:%M", time.localtime(entry["started_at"])), result_text(entry["result"]),
+                          entry["map_name"] or "—", entry["mode"] or "—", STATE_LABELS.get(entry["state"], entry["state"]),
+                          summary.get("you") or "—", summary.get("ally_avg") or "—", summary.get("enemy_avg") or "—",
+                          key=entry["path"])
+        table.focus()
+
+    def on_data_table_row_highlighted(self, event):
+        event.stop()  # the app's own handler is about the players table
+
+    def on_data_table_row_selected(self, event):
+        event.stop()
+        self.dismiss(event.row_key.value)
+
+    def action_close(self):
+        self.dismiss(None)
+
+
+def result_text(result):
+    """'W 13-10 +21' / 'L 8-13 -18' for a saved lobby's result, or a dash while it isn't known."""
+    if not result:
+        return Text("—", style="dim")
+    rr = result.get("rr")
+    label = f"{'W' if result['won'] else 'L'} {result.get('score') or ''}".strip() + (f" {rr:+d}" if rr is not None else "")
+    return Text(label, style="bold green" if result["won"] else "bold red")
+
+
 class LobbyApp(App):
     TITLE = "vRY lobby"
     CSS = """
     #topbar { height: 3; }
     #status { width: 1fr; height: 3; padding: 0 1; background: $boost; content-align: left middle; }
     #btn-view { min-width: 22; }
+    LobbyApp.-viewing #status { background: $warning-darken-2; }
     #summary { height: 2; padding: 0 1; }
     #body { height: 1fr; }
     #views { width: 3fr; }
@@ -105,13 +169,20 @@ class LobbyApp(App):
         Binding("r", "refresh", "Refresh"),
         Binding("v", "toggle_view", "List/Cards"),
         Binding("s", "next_scatter", "Scatter pairing"),
+        Binding("h", "history", "Saved lobbies"),
+        Binding("l", "live", "Live lobby"),
         *[Binding(str(number), f"graph('{key}')", label) for number, (key, label) in enumerate(GRAPHS, 1)],
     ]
 
-    def __init__(self, source, **kwargs):
+    def __init__(self, source, store_dir=None, **kwargs):
         super().__init__(**kwargs)
         self.source = source
-        self.model = LobbyModel()
+        self.store_dir = store_dir  # where lobbies are saved and reopened from; None turns saving off
+        self.live_model = LobbyModel()  # always fed by the source, even while a saved lobby is on screen
+        self.model = self.live_model  # what the screen shows: the live lobby or a saved one
+        self.viewing = None  # header of the saved lobby on screen, or None for live
+        self.agent_names, self.map_names = source.agent_names, source.map_names
+        self._dirty, self._started = False, time.time()
         self.stop_event = threading.Event()
         self.selected = None  # puuid of the highlighted player, in either view
         self.graph = GRAPHS[0][0]
@@ -181,7 +252,17 @@ class LobbyApp(App):
             pass
 
     async def handle_event(self, event):
-        kind = self.model.apply(event)
+        if isinstance(event, LobbyReset):
+            self._flush()  # the lobby that is ending is saved before the new one replaces it
+            self._started = time.time()
+        kind = self.live_model.apply(event)
+        if kind in ("row", "reset"):
+            self._dirty = True
+        if kind == "row":
+            self._after_row(event)
+        if self.viewing is not None:  # a saved lobby is on screen: the live one keeps loading behind it
+            self._refresh_chrome()
+            return
         if kind == "reset":
             self._rebuild_table()
             await self._rebuild_cards()
@@ -223,7 +304,7 @@ class LobbyApp(App):
         self._mark_selected()
 
     def _card_content(self, row):
-        return card_text(row, self.source.agent_names, self.model.map_name, self._axes.get(row.puuid))
+        return card_text(row, self.agent_names, self.model.map_name, self._axes.get(row.puuid))
 
     def _update_row(self, puuid):
         row = self.model.rows.get(puuid)
@@ -325,7 +406,13 @@ class LobbyApp(App):
         counts = f"   ranks {stats_done}/{total}" if total else ""
         if history_total:
             counts += f" · history {history_done}/{history_total}"
-        self.query_one("#status", Static).update(Text(f"{head or 'Waiting'}{counts}   {model.status}"))
+        if self.viewing is not None:
+            when = time.strftime("%d %b %H:%M", time.localtime(self.viewing["started_at"]))
+            outcome = f" · {result_text(self.viewing['result']).plain}" if self.viewing["result"] else ""
+            line = f"SAVED LOBBY · {when} · {head}{outcome}   l = back to the live lobby"
+            self.query_one("#status", Static).update(Text(line, style="bold"))
+        else:
+            self.query_one("#status", Static).update(Text(f"{head or 'Waiting'}{counts}   {model.status}"))
         self.query_one("#summary", Static).update(team_strip(model.ordered))
 
     def show_graph(self, key):
@@ -362,7 +449,7 @@ class LobbyApp(App):
             title, renderable = label, Text("No player selected yet.", style="dim")
         else:
             summary = row.history if row.history_state == "done" else None
-            names, maps = self.source.agent_names, self.source.map_names
+            names, maps = self.agent_names, self.map_names
             title = f"{row.name} — {label}"
             renderable = {
                 "form": lambda: form_view(summary, names, maps),
@@ -447,16 +534,94 @@ class LobbyApp(App):
 
     # --- actions ----------------------------------------------------------------------------
 
-    def action_refresh(self):
+    async def action_refresh(self):
+        await self.action_live()
         request = getattr(self.source, "request_refresh", None)
         if request:
             request()
-            self.model.apply(Status("Refreshing…"))
+            self.live_model.apply(Status("Refreshing…"))
             self._refresh_chrome()
 
     async def action_quit(self):
+        self._flush()
         self.stop_event.set()
         self.exit()
+
+    # --- saved lobbies ------------------------------------------------------------------------
+
+    def _summary_for(self, model):
+        rows = model.ordered
+        me = next((r for r in rows if r.is_self), None)
+        allies, enemies = [r for r in rows if r.ally], [r for r in rows if not r.ally]
+        return {"you": me.agent if me else "", "ally_avg": team_stats(allies)["avg_rank"] or "" if allies else "",
+                "enemy_avg": team_stats(enemies)["avg_rank"] or "" if enemies else ""}
+
+    def _flush(self):
+        """Save the live lobby if anything changed since the last save (never raises: saving is a convenience)."""
+        model = self.live_model
+        if not self.store_dir or not self._dirty or model.state not in ("INGAME", "PREGAME") or not model.rows:
+            return
+        self._dirty = False
+        try:
+            lobby_store.save(self.store_dir, lobby_store.build_snapshot(
+                model, self.source.agent_names, self.source.map_names, self._started, self._summary_for(model)))
+        except Exception:  # a full disk or a locked file must not take the screen down
+            pass
+
+    def _after_row(self, event):
+        """Fill in a past game's result from your own history, and save the lobby once everything has loaded."""
+        model = self.live_model
+        row = model.rows.get(event.puuid)
+        if self.store_dir and row is not None and row.is_self and row.history_state == "done" and row.history:
+            try:
+                lobby_store.backfill_results(self.store_dir, row.history)
+            except Exception:
+                pass
+        stats_done, history_done, total, history_total = model.progress()
+        if total and stats_done == total and history_done == history_total:
+            self._flush()
+
+    def action_history(self):
+        if not self.store_dir:
+            self.notify("Saving is off for this session.", severity="warning")
+            return
+        self.push_screen(HistoryScreen(lobby_store.list_saved(self.store_dir)), self._open_saved)
+
+    async def _open_saved(self, path):
+        if not path:
+            return
+        snapshot = lobby_store.load(path)
+        if snapshot is None:
+            self.notify("That saved lobby couldn't be read.", severity="error")
+            return
+        model = LobbyModel()
+        model.apply(LobbyReset(state=snapshot.get("state", ""), rows=lobby_store.rows_from(snapshot),
+                               map_name=snapshot.get("map_name", ""), map_id=snapshot.get("map_id", ""),
+                               mode=snapshot.get("mode", ""), server=snapshot.get("server", ""),
+                               match_id=snapshot.get("match_id", "")))
+        self.model = model
+        self.viewing = {"started_at": snapshot.get("started_at") or 0, "result": snapshot.get("result")}
+        self.agent_names, self.map_names = snapshot.get("agent_names") or {}, snapshot.get("map_names") or {}
+        self.add_class("-viewing")
+        await self._show_model()
+
+    async def action_live(self):
+        if self.viewing is None:
+            return
+        self.model, self.viewing = self.live_model, None
+        self.agent_names, self.map_names = self.source.agent_names, self.source.map_names
+        self.remove_class("-viewing")
+        await self._show_model()
+
+    async def _show_model(self):
+        """Rebuild both views from self.model (the live lobby or a saved one)."""
+        self.selected = None
+        self._axes = lobby_axes(self.model.ordered)
+        self._rebuild_table()
+        await self._rebuild_cards()
+        self._refresh_chrome()
+        self._refresh_graph()
+        self._focus_active_view()
 
 
 def main(argv=None):
@@ -465,12 +630,14 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.demo:
         source = DemoSource()
+        store_dir = os.path.join(history.CACHE_DIR, "lobbies-demo")  # kept apart from your real lobbies
     else:
         from lobby_live import LiveLobbySource
 
         print("Connecting to VALORANT… (start the game and log in if this waits)")
         source = LiveLobbySource.connect()
-    LobbyApp(source).run()
+        store_dir = os.path.join(history.CACHE_DIR, "lobbies")
+    LobbyApp(source, store_dir=store_dir).run()
 
 
 if __name__ == "__main__":

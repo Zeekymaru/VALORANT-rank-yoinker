@@ -3,6 +3,7 @@ model that applies them, and a demo source. No Textual import and no network her
 it is testable on its own. The live source lives in lobby_live.py."""
 import re
 import threading
+import time
 from dataclasses import dataclass, fields
 from typing import Any, Callable, Optional
 
@@ -89,6 +90,7 @@ class LobbyReset:
     map_id: str = ""
     mode: str = ""
     server: str = ""
+    match_id: str = ""  # keys the saved snapshot of this lobby
 
 
 @dataclass
@@ -111,6 +113,7 @@ class LobbyModel:
         self.map_id = ""
         self.mode = ""
         self.server = ""
+        self.match_id = ""
         self.status = "Starting…"
         self.rows = {}
 
@@ -118,7 +121,7 @@ class LobbyModel:
         """Apply a source event; returns the kind of change: 'reset', 'row', 'status' or ''."""
         if isinstance(event, LobbyReset):
             self.state, self.map_name, self.map_id = event.state, event.map_name, event.map_id
-            self.mode, self.server = event.mode, event.server
+            self.mode, self.server, self.match_id = event.mode, event.server, event.match_id
             self.rows = {row.puuid: row for row in event.rows}
             return "reset"
         if isinstance(event, PlayerUpdate):
@@ -272,7 +275,7 @@ class DemoSource:
                     is_self=(len(rows) == 0), agent_id=by_name[agent], agent=agent,
                     level=level or None, party=party))
             emit(LobbyReset(state="INGAME", rows=rows, map_name="Ascent", map_id=DEMO_MAP_ID,
-                            mode="Competitive", server="demo"))
+                            mode="Competitive", server="demo", match_id=f"demo{int(time.time())}"))
             emit(Status("Loading ranks…"))
             for row, spec in zip(rows, _DEMO_PLAYERS):
                 _, _, _, tier, rr, peak, _, _, _ = spec

@@ -174,7 +174,8 @@ class LiveLobbySource:
                 history_state="pending" if want_history else "skipped"))
 
         emit(LobbyReset(state=state, rows=rows, map_name=c.map_urls.get((map_id or "").lower()) or "",
-                        map_id=map_id or "", mode=self._mode(), server=server))
+                        map_id=map_id or "", mode=self._mode(), server=server,
+                        match_id=match_id or ""))
         emit(Status("Loading ranks…"))
         for row in rows:
             if stop.is_set():

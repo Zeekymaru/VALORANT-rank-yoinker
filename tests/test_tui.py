@@ -3,6 +3,7 @@
 pytest-asyncio isn't a dependency, so each test drives Textual's async test harness with asyncio.run."""
 import asyncio
 import io
+import os
 
 import pytest
 from rich.console import Console
@@ -38,9 +39,9 @@ async def loaded_app(pilot, app):
     raise AssertionError(f"demo lobby never finished loading: {app.model.progress()} {app.model.status}")
 
 
-def run(scenario):
+def run(scenario, store_dir=None):
     async def main():
-        app = tui.LobbyApp(DemoSource(delay=0))
+        app = tui.LobbyApp(DemoSource(delay=0), store_dir=store_dir)
         async with app.run_test(size=SIZE) as pilot:
             await loaded_app(pilot, app)
             await scenario(app, pilot)
@@ -408,3 +409,88 @@ def test_profile_graph_names_the_players_style():
         assert "Style" in text_of(app.query_one("#g-heat", Static))
 
     run(scenario)
+
+
+def test_a_loaded_lobby_is_saved_and_can_be_reopened_while_the_live_one_keeps_going(tmp_path):
+    import lobby_store
+
+    async def scenario(app, pilot):
+        await pilot.pause(0.3)
+        saved = lobby_store.list_saved(str(tmp_path))
+        assert len(saved) == 1 and saved[0]["players"] == 10 and saved[0]["map_name"] == "Ascent"
+        assert saved[0]["summary"]["you"] == "Viper"
+
+        await pilot.press("h")
+        await pilot.pause(0.3)
+        assert isinstance(app.screen, tui.HistoryScreen)
+        table = app.screen.query_one("#history-table", DataTable)
+        assert table.row_count == 1
+        await pilot.press("enter")
+        await pilot.pause(0.3)
+        assert app.viewing is not None and app.model is not app.live_model and app.has_class("-viewing")
+        status = text_of(app.query_one("#status", Static))
+        assert status.startswith("SAVED LOBBY") and "Ascent" in status and "back to the live lobby" in status
+        assert app.query_one("#players", DataTable).row_count == 10 and app.selected == "demo-0"
+        await pilot.press("6")  # the graphs work on the saved lobby (names come from the snapshot)
+        await pilot.pause(0.2)
+        assert "Zikeyo#ivun — Profile" in text_of(app.query_one("#graph-title", Static))
+
+        app.live_model.apply(tui.Status("live keeps loading"))  # live events don't touch the saved view
+        assert app.model.status != "live keeps loading"
+
+        await pilot.press("l")
+        await pilot.pause(0.3)
+        assert app.viewing is None and app.model is app.live_model and not app.has_class("-viewing")
+        assert not text_of(app.query_one("#status", Static)).startswith("SAVED LOBBY")
+
+    run(scenario, store_dir=str(tmp_path))
+
+
+def test_history_screen_explains_when_nothing_is_saved_and_closes_with_escape(tmp_path):
+    async def scenario(app, pilot):
+        await pilot.press("h")
+        await pilot.pause(0.2)
+        assert isinstance(app.screen, tui.HistoryScreen)
+        assert "Nothing saved yet" in text_of(app.screen.query_one("#history-empty", Static))
+        await pilot.press("escape")
+        await pilot.pause(0.2)
+        assert not isinstance(app.screen, tui.HistoryScreen) and app.viewing is None
+
+    async def main():
+        app = tui.LobbyApp(DemoSource(delay=0), store_dir=str(tmp_path / "empty"))
+        app._flush = lambda: None  # keep this lobby from being saved so the list is empty
+        app._after_row = lambda event: None
+        async with app.run_test(size=SIZE) as pilot:
+            await loaded_app(pilot, app)
+            await scenario(app, pilot)
+
+    asyncio.run(main())
+
+
+def test_without_a_store_directory_nothing_is_written_and_h_says_so(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    async def scenario(app, pilot):
+        await pilot.press("h")
+        await pilot.pause(0.2)
+        assert not isinstance(app.screen, tui.HistoryScreen)
+        assert not os.path.exists(tmp_path / "cache")
+
+    run(scenario)
+
+
+def test_reload_returns_to_the_live_lobby_and_saves_the_one_that_ended(tmp_path):
+    import lobby_store
+
+    async def scenario(app, pilot):
+        await pilot.press("h")
+        await pilot.pause(0.2)
+        await pilot.press("enter")
+        await pilot.pause(0.3)
+        assert app.viewing is not None
+        await pilot.press("r")
+        await pilot.pause(0.3)
+        assert app.viewing is None and app.model is app.live_model
+        assert lobby_store.list_saved(str(tmp_path))
+
+    run(scenario, store_dir=str(tmp_path))
