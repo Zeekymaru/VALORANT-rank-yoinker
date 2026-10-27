@@ -2,8 +2,10 @@
 
 pytest-asyncio isn't a dependency, so each test drives Textual's async test harness with asyncio.run."""
 import asyncio
+import io
 
 import pytest
+from rich.console import Console
 
 pytest.importorskip("textual")
 
@@ -19,7 +21,13 @@ def text_of(widget):
     content = getattr(widget, "content", None)
     if content is None:
         content = getattr(widget, "renderable", "")
-    return getattr(content, "plain", str(content))
+    if hasattr(content, "plain"):
+        return content.plain
+    if isinstance(content, str):
+        return content
+    console = Console(file=io.StringIO(), width=120, color_system=None)  # a Group or Table: draw it to text
+    console.print(content)
+    return console.file.getvalue()
 
 
 async def loaded_app(pilot, app):
@@ -318,6 +326,62 @@ def test_profile_graph_draws_the_radar_for_the_selected_player():
         assert "Echo#09110 — Profile" in text_of(app.query_one("#graph-title", Static))
 
     run(scenario)
+
+
+def test_list_has_a_fingerprint_column_that_fills_in_as_history_arrives():
+    async def scenario(app, pilot):
+        table = app.query_one("#players", DataTable)
+        assert str(table.columns[app._column_keys[-1]].label) == "AESUOC"
+        assert len(table.get_row("demo-0")[-1].plain) == 6
+        assert table.get_row("demo-8")[-1].plain == ""  # a player with no history gets no fingerprint
+
+    run(scenario)
+
+
+def test_heatmap_graph_lists_the_whole_lobby_and_follows_the_selection():
+    async def scenario(app, pilot):
+        await pilot.press("7")
+        await pilot.pause(0.2)
+        assert app.graph == "heat" and text_of(app.query_one("#graph-title", Static)) == "Lobby"
+        first = text_of(app.query_one("#g-heat", Static))
+        assert "Your team avg" in first and "Enemy avg" in first and "▶ Zikeyo#ivun" in first
+        await pilot.press("down")
+        await pilot.pause(0.1)
+        assert "▶ Echo#09110" in text_of(app.query_one("#g-heat", Static))
+
+    run(scenario)
+
+
+def test_scatter_graph_plots_the_lobby_and_s_cycles_the_pairing():
+    async def scenario(app, pilot):
+        await pilot.press("s")  # from another graph, s jumps to the scatter without skipping a pairing
+        await pilot.pause(0.2)
+        assert app.graph == "scatter" and app.scatter_index == 0
+        assert "First-blood rate" in text_of(app.query_one("#scatter-text", Static))
+        assert app.query_one("#scatter-plot", tui.PlotextPlot) is not None
+        await pilot.press("s")
+        await pilot.pause(0.2)
+        assert app.scatter_index == 1 and "KAST %" in text_of(app.query_one("#scatter-text", Static))
+        await pilot.click("#scatter-next")
+        await pilot.pause(0.2)
+        assert app.scatter_index == 2
+
+    run(scenario)
+
+
+def test_scatter_without_textual_plotext_lists_the_values(monkeypatch):
+    monkeypatch.setattr(tui, "PlotextPlot", None)
+
+    async def main():
+        app = tui.LobbyApp(DemoSource(delay=0))
+        async with app.run_test(size=SIZE) as pilot:
+            await loaded_app(pilot, app)
+            await pilot.press("8")
+            await pilot.pause(0.2)
+            text = text_of(app.query_one("#g-scatter", Static))
+            assert "requirements-tui-charts.txt" in text and "Echo" in text
+
+    asyncio.run(main())
 
 
 def test_the_app_works_without_textual_plotext(monkeypatch):

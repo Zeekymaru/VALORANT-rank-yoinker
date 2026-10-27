@@ -17,8 +17,10 @@ from textual.css.query import NoMatches
 from textual.widgets import Button, ContentSwitcher, DataTable, Footer, Static
 
 from lobby_data import DemoSource, LobbyModel, Status
-from tui_views import (COLUMNS, GRAPHS, agents_view, card_text, form_view, profile_view, row_cells, rr_series, rr_view,
-                       sides_view, team_strip, teams_view)
+import player_profile
+from tui_views import (COLUMNS, GRAPHS, LOBBY_GRAPHS, agents_view, card_text, fingerprint, form_view, heat_view,
+                       lobby_axes, profile_view, row_cells, rr_series, rr_view, scatter_caption, scatter_fallback,
+                       scatter_points, sides_view, team_strip, teams_view, _few_games)
 
 try:  # optional: real charts for the RR trend (pip install -r requirements-tui-charts.txt)
     from textual_plotext import PlotextPlot
@@ -85,8 +87,10 @@ class LobbyApp(App):
     #views { width: 3fr; }
     LobbyApp.-cards #views { width: 4fr; }
     #side { width: 2fr; min-width: 46; padding: 0 1; border-left: solid $primary-darken-2; }
-    #graph-buttons { height: 3; }
-    #graph-buttons Button { min-width: 9; margin-right: 1; }
+    #graph-buttons { layout: grid; grid-size: 4; grid-gutter: 0 1; grid-rows: 3; height: 6; }
+    #graph-buttons Button { width: 100%; min-width: 9; }
+    #scatter-next { margin-bottom: 1; }
+    #scatter-plot { height: 22; }
     #graph-title { height: 1; text-style: bold; margin-bottom: 1; }
     #graphs { height: 1fr; }
     #rr-plot { height: 14; }
@@ -100,6 +104,7 @@ class LobbyApp(App):
         Binding("q", "quit", "Quit"),
         Binding("r", "refresh", "Refresh"),
         Binding("v", "toggle_view", "List/Cards"),
+        Binding("s", "next_scatter", "Scatter pairing"),
         *[Binding(str(number), f"graph('{key}')", label) for number, (key, label) in enumerate(GRAPHS, 1)],
     ]
 
@@ -113,6 +118,8 @@ class LobbyApp(App):
         self.view = "list"
         self._column_keys = []
         self._cards = {}
+        self._axes = {}  # puuid -> lobby percentiles, for the fingerprints
+        self.scatter_index = 0
 
     # --- layout -------------------------------------------------------------------------
 
@@ -136,6 +143,11 @@ class LobbyApp(App):
                             with Vertical(id="g-rr"):
                                 yield Static(id="rr-text")
                                 yield PlotextPlot(id="rr-plot")
+                        elif key == "scatter" and PlotextPlot is not None:
+                            with VerticalScroll(id="g-scatter"):
+                                yield Static(id="scatter-text")
+                                yield Button("s  Next pairing", id="scatter-next")
+                                yield PlotextPlot(id="scatter-plot")
                         else:
                             yield Static(id=f"g-{key}")
         yield Footer()
@@ -175,6 +187,7 @@ class LobbyApp(App):
             await self._rebuild_cards()
         elif kind == "row":
             self._update_row(event.puuid)
+            self._refresh_prints()
         self._refresh_chrome()
         if kind in ("reset", "row"):
             self._refresh_graph()
@@ -184,8 +197,9 @@ class LobbyApp(App):
     def _rebuild_table(self):
         table = self.query_one("#players", DataTable)
         table.clear()
+        self._axes = lobby_axes(self.model.ordered)
         for row in self.model.ordered:
-            table.add_row(*row_cells(row), key=row.puuid)
+            table.add_row(*row_cells(row, self._axes.get(row.puuid)), key=row.puuid)
         puuids = [row.puuid for row in self.model.ordered]
         if self.selected not in puuids:
             self.selected = puuids[0] if puuids else None
@@ -209,18 +223,29 @@ class LobbyApp(App):
         self._mark_selected()
 
     def _card_content(self, row):
-        return card_text(row, self.source.agent_names, self.model.map_name)
+        return card_text(row, self.source.agent_names, self.model.map_name, self._axes.get(row.puuid))
 
     def _update_row(self, puuid):
         row = self.model.rows.get(puuid)
         if row is None:
             return
         table = self.query_one("#players", DataTable)
-        for column_key, cell in zip(self._column_keys, row_cells(row)):
+        for column_key, cell in zip(self._column_keys, row_cells(row, self._axes.get(puuid))):
             table.update_cell(puuid, column_key, cell, update_width=True)
         card = self._cards.get(puuid)
         if card is not None:
             card.update(self._card_content(row))
+
+    def _refresh_prints(self):
+        """A player's rank in the lobby changes whenever anyone's history arrives, so redo every fingerprint."""
+        self._axes = lobby_axes(self.model.ordered)
+        table = self.query_one("#players", DataTable)
+        for row in self.model.ordered:
+            axes = self._axes.get(row.puuid)
+            table.update_cell(row.puuid, self._column_keys[-1], fingerprint(axes, _few_games(row.history)))
+            card = self._cards.get(row.puuid)
+            if card is not None:
+                card.update(self._card_content(row))
 
     def action_toggle_view(self):
         self.view = "cards" if self.view == "list" else "list"
@@ -317,6 +342,9 @@ class LobbyApp(App):
         button_id = event.button.id or ""
         if button_id == "btn-view":
             self.action_toggle_view()
+        elif button_id == "scatter-next":
+            self.action_next_scatter()
+            self._focus_active_view()
         elif button_id.startswith("btn-"):
             self.show_graph(button_id[len("btn-"):])
             self._focus_active_view()  # keep the arrow keys moving through players
@@ -324,8 +352,9 @@ class LobbyApp(App):
     def _refresh_graph(self):
         row = self.model.rows.get(self.selected)
         label = dict(GRAPHS)[self.graph]
-        if self.graph == "teams":
-            title, renderable = "Lobby", teams_view(self.model.ordered)
+        if self.graph in LOBBY_GRAPHS:
+            title = "Lobby"
+            renderable = self._lobby_graph()
         elif self.graph == "profile":
             title = f"{row.name} — {label}" if row else label
             renderable = profile_view(self.model.ordered, self.selected)
@@ -344,8 +373,58 @@ class LobbyApp(App):
             if self.graph == "rr":
                 self._refresh_rr_plot(summary)
         self.query_one("#graph-title", Static).update(Text(title, style="bold"))
-        target = "#rr-text" if self.graph == "rr" and PlotextPlot is not None else f"#g-{self.graph}"
+        target = f"#g-{self.graph}"
+        if PlotextPlot is not None and self.graph in ("rr", "scatter"):
+            target = "#rr-text" if self.graph == "rr" else "#scatter-text"
         self.query_one(target, Static).update(renderable)
+
+    def _lobby_graph(self):
+        rows = self.model.ordered
+        if self.graph == "teams":
+            return teams_view(rows)
+        if self.graph == "heat":
+            return heat_view(rows, self.selected)
+        x_key, y_key = player_profile.SCATTERS[self.scatter_index % len(player_profile.SCATTERS)]
+        points = scatter_points(rows, x_key, y_key, self.selected)
+        caption = scatter_caption(self.scatter_index, points)
+        if PlotextPlot is None:
+            caption.append_text(scatter_fallback(self.scatter_index, points))
+        else:
+            self._draw_scatter(x_key, y_key, points)
+        return caption
+
+    def _draw_scatter(self, x_key, y_key, points):
+        try:
+            plot = self.query_one("#scatter-plot", PlotextPlot)
+            plt = plot.plt
+            plt.clear_figure()
+            plt.xlabel(player_profile.METRICS[x_key][0])
+            plt.ylabel(player_profile.METRICS[y_key][0])
+            if len(points) >= 2:
+                plt.vline(sum(p["x"] for p in points) / len(points), "gray")
+                plt.hline(sum(p["y"] for p in points) / len(points), "gray")
+                for ally, colour in ((True, (90, 200, 230)), (False, (235, 80, 80))):
+                    group = [p for p in points if p["ally"] == ally and not p["selected"]]
+                    if group:
+                        plt.scatter([p["x"] for p in group], [p["y"] for p in group], color=colour, marker="●")
+                chosen = [p for p in points if p["selected"]]
+                if chosen:
+                    plt.scatter([p["x"] for p in chosen], [p["y"] for p in chosen], color=(255, 215, 0), marker="●")
+                xs, ys = [p["x"] for p in points], [p["y"] for p in points]
+                span, yspan = max(xs) - min(xs) or 1, max(ys) - min(ys) or 1
+                plt.xlim(min(xs) - 0.08 * span, max(xs) + 0.4 * span)  # room on the right for the labels
+                plt.ylim(min(ys) - 0.1 * yspan, max(ys) + 0.1 * yspan)
+                for p in points:  # label just right of the marker so it doesn't cover it
+                    plt.text(p["name"][:9], p["x"] + 0.025 * span, p["y"], alignment="left",
+                             color=(255, 215, 0) if p["selected"] else (150, 150, 160))
+            plot.refresh()
+        except Exception:  # a chart problem must never take the screen down
+            pass
+
+    def action_next_scatter(self):
+        if self.graph == "scatter":
+            self.scatter_index = (self.scatter_index + 1) % len(player_profile.SCATTERS)
+        self.show_graph("scatter")
 
     def _refresh_rr_plot(self, summary):
         if PlotextPlot is None:

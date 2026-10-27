@@ -1,10 +1,11 @@
-"""Rich renderables for the TUI: the players-table cells and the six graph views.
+"""Rich renderables for the TUI: the players-table cells and the graph views.
 
 Pure functions with no Textual import, so they can be checked through their plain text.
 Everything here reads PlayerRow / history.summarise() data and never touches the network."""
 import math
 from itertools import accumulate
 
+from rich.console import Group
 from rich.table import Table
 from rich.text import Text
 
@@ -14,8 +15,10 @@ from lobby_data import ALLY_RGB, ENEMY_RGB, SELF_RGB, party_rgb, rank_label, rea
 from src.constants import AGENTCOLORLIST
 
 GRAPHS = [("form", "Form"), ("sides", "Atk/Def"), ("agents", "Agents"), ("teams", "Teams"), ("rr", "RR trend"),
-          ("profile", "Profile")]
-COLUMNS = ["", "Agent", "Name", "Rank", "RR", "Peak", "HS", "WR", "Lvl", "ΔRR", "Recent", "Form"]
+          ("profile", "Profile"), ("heat", "Heatmap"), ("scatter", "Scatter")]
+LOBBY_GRAPHS = ("teams", "heat", "scatter")  # about the whole lobby, not the selected player
+# the last column is the fingerprint: one block per radar axis (Aim Entry Survival Utility Objective Consistency)
+COLUMNS = ["", "Agent", "Name", "Rank", "RR", "Peak", "HS", "WR", "Lvl", "ΔRR", "Recent", "Form", "AESUOC"]
 BAR_WIDTH = 20
 SPARK = "▁▂▃▄▅▆▇█"
 GREEN = (90, 225, 110)
@@ -125,12 +128,12 @@ def hs_text(row):
     return Text("N/A" if row.stats_state == "done" else "", style=DIM)
 
 
-def row_cells(row):
-    """The row's cells, in COLUMNS order."""
+def row_cells(row, axes=None):
+    """The row's cells, in COLUMNS order. axes are the player's lobby percentiles (for the fingerprint)."""
     return [
         party_text(row), agent_text(row), name_text(row), rank_text(row), Text(_num(row.rr)),
         peak_text(row), hs_text(row), wr_text(row), Text(_num(row.level)), delta_text(row),
-        recent_text(row), form_text(row),
+        recent_text(row), form_text(row), fingerprint(axes, _few_games(row.history)),
     ]
 
 
@@ -159,7 +162,7 @@ def _sides_line(summary):
     return line
 
 
-def recent_block(summary, agent_names, map_name=""):
+def recent_block(summary, agent_names, map_name="", axes=None):
     """The card's history lines, like the console's Recent cell:
 
         60% 3/5  ● ● ○ ● ○
@@ -189,7 +192,10 @@ def recent_block(summary, agent_names, map_name=""):
     if perf is not None and perf["acs"] is not None:
         parts = [f"ACS {perf['acs']:.0f}", f"ADR {_fmt(perf['adr'], '.0f')}", f"K/D {_fmt(perf['kd'], '.2f')}",
                  f"KAST {_fmt(None if perf['kast'] is None else perf['kast'] * 100, '.0f')}%"]
-        text.append("\n" + " · ".join(parts), style=DIM)
+        text.append("\n" + " ".join(parts), style=DIM)
+    if axes:
+        text.append("\nProfile ", style=DIM)
+        text.append_text(fingerprint(axes, _few_games(summary), spaced=True))
     record = summary.get("map")
     if map_name and record is not None:
         if record["games"]:
@@ -200,7 +206,7 @@ def recent_block(summary, agent_names, map_name=""):
     return text
 
 
-def card_text(row, agent_names, map_name=""):
+def card_text(row, agent_names, map_name="", axes=None):
     """Everything about one player for the card view: identity, rank, season stats, then recent history."""
     text = Text()
     if row.party:
@@ -232,7 +238,7 @@ def card_text(row, agent_names, map_name=""):
     if row.history_state != "done":
         text.append("history …", style=DIM)
     else:
-        text.append_text(recent_block(row.history, agent_names, map_name))
+        text.append_text(recent_block(row.history, agent_names, map_name, axes))
     return text
 
 
@@ -569,7 +575,7 @@ def profile_view(rows, selected):
     summary = row.history if row.history_state == "done" else None
     if not _usable(summary):
         return _no_history(summary)
-    profiles = {r.puuid: profile.derive(r.history) for r in rows if r.history_state == "done"}
+    profiles = lobby_profiles(rows)
     mine = profiles.get(selected)
     if mine is None:
         return Text("Per-match performance isn't in this cached summary yet; it fills in on the next refresh.",
@@ -604,4 +610,129 @@ def profile_view(rows, selected):
         text.append(detail[label] + "\n", style=DIM)
     text.append(f"\nACS {_fmt(mine['acs'], '.0f')} · K/D {_fmt(mine['kd'], '.2f')} · "
                 f"{_fmt(mine['kills'], 'd')}/{_fmt(mine['deaths'], 'd')}/{_fmt(mine['assists'], 'd')}")
+    return text
+
+
+# --- fingerprint, heatmap and scatter (lobby-wide) -----------------------------------------
+
+LEVELS = "▁▂▃▄▅▆▇█"
+HEAT_HEADERS = {"Aim": "Aim", "Entry": "Entry", "Survival": "Surv", "Utility": "Util", "Objective": "Obj",
+                "Consistency": "Cons"}
+
+
+def lobby_profiles(rows):
+    """{puuid: rates or None} for every row; rows whose history hasn't loaded (or has no counts) are None."""
+    return {r.puuid: profile.derive(r.history) if r.history_state == "done" else None for r in rows}
+
+
+def lobby_axes(rows):
+    """{puuid: {axis: percentile or None} or None}: each player ranked among the lobby's players."""
+    return profile.radar_axes(lobby_profiles(rows))
+
+
+def _few_games(summary):
+    stats = (summary or {}).get("stats") if isinstance(summary, dict) else None
+    return isinstance(stats, dict) and (stats.get("games") or 0) < profile.DIM_BELOW_GAMES
+
+
+def fingerprint(axes, dimmed=False, spaced=False):
+    """Six blocks, one per radar axis, as tall as the player's rank in the lobby and coloured red -> green."""
+    text = Text()
+    if not axes:
+        return text
+    for index, (label, _) in enumerate(profile.AXES):
+        value = axes.get(label)
+        if index and spaced:
+            text.append(" ")
+        if value is None:
+            text.append("·", style=DIM)
+        else:
+            text.append(LEVELS[min(len(LEVELS) - 1, int(value * len(LEVELS)))],
+                        style=("dim " if dimmed else "") + rgb_style(percentile_rgb(value)))
+    return text
+
+
+def _heat_cell(value):
+    if value is None:
+        return Text("  —  ", style=DIM, justify="center")
+    return Text(f" {value * 100:3.0f} ", style=f"bold black on {rgb_style(percentile_rgb(value))}", justify="center")
+
+
+def _average(axes_list):
+    out = {}
+    for label, _ in profile.AXES:
+        values = [a[label] for a in axes_list if a and a.get(label) is not None]
+        out[label] = sum(values) / len(values) if values else None
+    return out
+
+
+def heat_view(rows, selected):
+    """Every player against every axis, coloured by lobby percentile, with a row of team averages per team."""
+    profiles = lobby_profiles(rows)
+    axes = profile.radar_axes(profiles)
+    if not any(axes.values()):
+        loaded = any(r.history_state == "done" for r in rows)
+        return Text("Per-match performance isn't available for anyone yet; it fills in as history loads or "
+                    "after the next refresh." if loaded else "Loading match history…", style=DIM)
+    table = Table(box=None, pad_edge=False, header_style="bold", show_edge=False)
+    table.add_column("Player", no_wrap=True)
+    for label, _ in profile.AXES:
+        table.add_column(HEAT_HEADERS[label], justify="center", no_wrap=True)
+    table.add_column("Games", justify="right", style=DIM)
+    for ally in (True, False):
+        group = [r for r in rows if r.ally == ally]
+        if not group:
+            continue
+        for row in group:
+            name = name_text(row)
+            if row.puuid == selected:
+                name.stylize("bold")
+            lead = Text("▶ " if row.puuid == selected else "  ")
+            mine = axes.get(row.puuid)
+            games = (profiles.get(row.puuid) or {}).get("games")
+            table.add_row(lead + name, *[_heat_cell(mine.get(label) if mine else None) for label, _ in profile.AXES],
+                          str(games) if games else "")
+        avg = _average([axes.get(r.puuid) for r in group])
+        table.add_row(Text("  " + ("Your team avg" if ally else "Enemy avg"), style="italic dim"),
+                      *[_heat_cell(avg[label]) for label, _ in profile.AXES], "")
+        table.add_row(*[""] * (len(profile.AXES) + 2))
+    head = Text(f"Every player against every axis · percentile among the {sum(1 for p in profiles.values() if p)} "
+                "players with data\n", style="bold")
+    head.append("red = low in this lobby · green = high · 50 = lobby middle\n\n", style=DIM)
+    return Group(head, table)
+
+
+def scatter_points(rows, x_key, y_key, selected=None):
+    """One point per player with both rates, scaled for plotting: name, team, selected flag, x, y."""
+    profiles = lobby_profiles(rows)
+    fx, fy = profile.METRICS[x_key][1], profile.METRICS[y_key][1]
+    points = []
+    for row in rows:
+        p = profiles.get(row.puuid)
+        if p and p.get(x_key) is not None and p.get(y_key) is not None:
+            points.append({"name": (row.name or "?").split("#")[0], "ally": row.ally,
+                           "selected": row.puuid == selected, "x": p[x_key] * fx, "y": p[y_key] * fy})
+    return points
+
+
+def scatter_caption(index, points):
+    x_key, y_key = profile.SCATTERS[index % len(profile.SCATTERS)]
+    text = Text(f"{profile.METRICS[y_key][0]}  vs  {profile.METRICS[x_key][0]}"
+                f"   ({index % len(profile.SCATTERS) + 1}/{len(profile.SCATTERS)}, s = next pairing)\n", style="bold")
+    if len(points) < 2:
+        text.append("Not enough players with performance data yet.", style=DIM)
+    else:
+        text.append("top right = high on both · dashed lines = lobby average · "
+                    "cyan = your team, red = enemy, yellow = selected", style=DIM)
+    return text
+
+
+def scatter_fallback(index, points):
+    """Without textual-plotext: the same pairing as a plain list."""
+    x_key, y_key = profile.SCATTERS[index % len(profile.SCATTERS)]
+    text = Text("\nInstall requirements-tui-charts.txt for the scatter plot. Values:\n", style=DIM)
+    for point in sorted(points, key=lambda p: -p["y"]):
+        text.append(f"{point['name']:<14}{profile.METRICS[x_key][0][:10]} {point['x']:>6.1f}   "
+                    f"{profile.METRICS[y_key][0][:10]} {point['y']:>6.1f}\n",
+                    style=rgb_style(CYAN) if point["ally"] else rgb_style(RED))
     return text

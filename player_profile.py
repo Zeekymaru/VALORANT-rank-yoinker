@@ -19,6 +19,15 @@ AXES = (
     ("Consistency", ("consistency",)),
 )
 
+# rate key -> (label, factor applied before plotting or printing as a percentage / plain number)
+METRICS = {
+    "adr": ("ADR", 1), "acs": ("ACS", 1), "kd": ("K/D", 1), "hs": ("Headshot %", 100),
+    "first_blood": ("First-blood rate (% of rounds)", 100), "kast": ("KAST %", 100),
+    "util": ("Ability casts per round", 1),
+}
+# (x rate, y rate) pairings the scatter plot cycles through
+SCATTERS = (("adr", "first_blood"), ("kast", "adr"), ("hs", "adr"), ("acs", "kd"), ("util", "kast"))
+
 
 def _ratio(num, den):
     return None if num is None or not den else num / den

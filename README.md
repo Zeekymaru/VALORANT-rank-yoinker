@@ -117,7 +117,7 @@ An interactive Textual screen next to the console app (`main.py` is untouched). 
 side panel switches between five graphs with the buttons or the 1-5 keys: **Form** (last games, newest first, with
 agent, map, side rounds and RR), **Atk/Def** (the team's round win rate per side), **Agents** (wins-losses per agent
 and the role split), **Teams** (your team vs the enemy side by side) and **RR trend** (a sparkline, or a line chart
-if `textual-plotext` is installed) and **Profile** (key 6, see below). Arrow keys pick the player the graph is about, `r` reloads, `q` quits.
+if `textual-plotext` is installed) and **Profile** (key 6), **Heatmap** (key 7) and **Scatter** (key 8), see below. Arrow keys pick the player the graph is about, `r` reloads, `q` quits.
 
 The left side has two views, switched with `v` or the **View** button. **List** is one compact line per player.
 **Cards** shows each player as a card (identity, rank, season stats and the full Recent block), your team and the
@@ -130,7 +130,16 @@ first deaths), Survival (KAST), Utility (ability casts per round), Objective (pl
 Consistency (how steady their score is between games). Each axis is the player's **percentile among the players in this
 lobby**, so the dotted ring is the middle of the lobby and a point outside it beats most of the lobby; it isn't an
 absolute skill rating, and the same player can look different in another lobby. It rests on the same 5 games as
-the rest, so with fewer than 3 games it is drawn dimmed. Cards also get an `ACS · ADR · K/D · KAST` line. All of it comes
+the rest, so with fewer than 3 games it is drawn dimmed. Cards also get an `ACS ADR K/D KAST` line and a fingerprint.
+
+* **Fingerprint:** six blocks, one per radar axis in the order Aim, Entry, Survival, Utility, Objective, Consistency
+  (the `AESUOC` column in the list, a `Profile` line on the cards). A block is as tall as the player's rank in the
+  lobby and coloured red (low) to green (high); a dot means no data. It is recomputed whenever anyone's history arrives.
+* **Heatmap (7):** every player against every axis as coloured percentiles, plus a team-average row for each side.
+* **Scatter (8):** one point per player, your team cyan, the enemy red, the selected player yellow, with dashed
+  lobby-average lines. `s` (or the button) cycles the pairing: ADR vs first-blood rate, KAST vs ADR, HS vs ADR,
+  ACS vs K/D, casts vs KAST. It needs `textual-plotext` (`requirements-tui-charts.txt`); without it the same pairing
+  is listed as numbers. All of it comes
 from match details already fetched (`match_stats.py`, `player_profile.py`); there are no extra requests. Summaries
 cached before this existed show "fills in on the next refresh".
 

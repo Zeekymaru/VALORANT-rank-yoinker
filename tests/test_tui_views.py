@@ -61,7 +61,7 @@ def test_row_cells_match_the_columns():
     cells = tui_views.row_cells(loaded_row())
     assert len(cells) == len(tui_views.COLUMNS)
     assert [c.plain for c in cells] == ["■", "Jett", "Zeek#1", "Gold 3", "40", "Plat 1 (e7a3)", "22", "51 (30)",
-                                        "120", "+18", "67% 2/3", "● ○ ● "]
+                                        "120", "+18", "67% 2/3", "● ○ ● ", ""]
 
 
 def test_cells_while_loading_and_when_data_is_missing():
@@ -232,7 +232,7 @@ def test_radar_canvas_marks_each_known_axis_and_the_ring():
 
 def test_card_shows_a_performance_line_when_stats_exist():
     lines = tui_views.recent_block(_with_stats(), NAMES, "").plain.splitlines()
-    assert "ACS 200 · ADR 150 · K/D 1.11 · KAST 73%" in lines
+    assert "ACS 200 ADR 150 K/D 1.11 KAST 73%" in lines
     assert not any(line.startswith("ACS") for line in tui_views.recent_block(summary(), NAMES, "").plain.splitlines())
 
 
@@ -246,3 +246,64 @@ def test_radar_canvas_dims_for_small_samples_and_survives_few_points():
     assert styles and all("dim" in s for s in styles if "rgb" in s)
     assert tui_views.radar_canvas([None] * 6).plain.count("●") == 0
     assert tui_views.radar_canvas([0.7, None, None, None, None, None]).plain.count("●") == 1
+
+
+def _lobby():
+    return [loaded_row(puuid="a1", name="Zeek#1", history=_with_stats()),
+            loaded_row(puuid="a2", name="Mate#2", history=_with_stats(damage=12000, kast_rounds=55, first_bloods=12)),
+            loaded_row(puuid="e1", name="Foe#3", ally=False, history=_with_stats(damage=6000, first_bloods=2)),
+            loaded_row(puuid="e2", name="Hidden#4", ally=False, history=history._unavailable())]
+
+
+def test_fingerprint_is_one_block_per_axis_as_tall_as_the_rank():
+    axes = {"Aim": 1.0, "Entry": 0.5, "Survival": 0.0, "Utility": None, "Objective": 0.99, "Consistency": 0.25}
+    assert tui_views.fingerprint(axes).plain == "█▅▁·█▃"
+    assert tui_views.fingerprint(axes, spaced=True).plain == "█ ▅ ▁ · █ ▃"
+    assert tui_views.fingerprint(None).plain == "" and tui_views.fingerprint({}).plain == ""
+    assert all("dim" in str(s.style) for s in tui_views.fingerprint(axes, dimmed=True).spans if "rgb" in str(s.style))
+    assert len(tui_views.COLUMNS) == len(tui_views.row_cells(loaded_row()))
+
+
+def test_the_list_row_and_card_carry_the_fingerprint():
+    rows = _lobby()
+    axes = tui_views.lobby_axes(rows)
+    assert axes["e2"] is None
+    cells = tui_views.row_cells(rows[1], axes["a2"])
+    assert len(cells[-1].plain) == 6 and cells[-1].plain != ""
+    card = tui_views.card_text(rows[1], NAMES, "Ascent", axes["a2"]).plain
+    assert any(line.startswith("Profile ") for line in card.splitlines())
+    assert "Profile" not in tui_views.card_text(rows[1], NAMES, "Ascent").plain
+
+
+def test_heat_view_ranks_everyone_and_averages_each_team():
+    text = plain(tui_views.heat_view(_lobby(), "a2"))
+    assert "percentile among the 3 players with data" in text
+    assert all(header in text for header in tui_views.HEAT_HEADERS.values())
+    lines = text.splitlines()
+    assert any(line.lstrip().startswith("▶ Mate#2") for line in lines)  # the selected player is marked
+    assert any("Zeek#1" in line and "▶" not in line for line in lines)
+    assert any("Your team avg" in line for line in lines) and any("Enemy avg" in line for line in lines)
+    hidden = next(line for line in lines if "Hidden#4" in line)
+    assert hidden.count("—") == 6  # no data: dashes rather than numbers
+    assert "Loading" in plain(tui_views.heat_view([loaded_row(history_state="pending", history=None)], "p"))
+    assert "isn't available" in plain(tui_views.heat_view([loaded_row(history=history._unavailable())], "p"))
+
+
+def test_scatter_points_scale_the_rates_and_skip_players_without_data():
+    points = tui_views.scatter_points(_lobby(), "adr", "first_blood", "a2")
+    assert [p["name"] for p in points] == ["Zeek", "Mate", "Foe"]  # the hidden player has no point
+    zeek, mate, foe = points
+    assert zeek["x"] == 150 and round(zeek["y"], 1) == 10.0  # ADR as is; first bloods as % of rounds
+    assert mate["selected"] and not zeek["selected"] and zeek["ally"] and not foe["ally"]
+    assert all(set(p) == {"name", "ally", "selected", "x", "y"} for p in points)
+
+
+def test_scatter_caption_and_fallback():
+    points = tui_views.scatter_points(_lobby(), "adr", "first_blood")
+    caption = tui_views.scatter_caption(0, points).plain
+    assert caption.startswith("First-blood rate (% of rounds)  vs  ADR") and "1/5" in caption and "top right" in caption
+    assert "2/5" in tui_views.scatter_caption(1, points).plain
+    assert tui_views.scatter_caption(5, points).plain.startswith("First-blood")  # wraps around
+    assert "Not enough players" in tui_views.scatter_caption(0, points[:1]).plain
+    fallback = tui_views.scatter_fallback(0, points).plain
+    assert "requirements-tui-charts.txt" in fallback and "Mate" in fallback
