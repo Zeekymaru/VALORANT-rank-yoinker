@@ -75,6 +75,23 @@ If you want to make a small change to the application, you can:
 4) Download it and test it.
 5) Submit a Pull Request if you would like your change included in future releases.
 
+## Lobby history (experimental)
+
+Three extra columns for each player in the lobby (INGAME and PREGAME): **Top Agents** (top 3 agents in recent
+competitive matches), **Recent WR** (win rate with sample size, e.g. `67% (2/3)`) and **Roles** (how many of those
+matches were on each role). Players whose history is private or unavailable show `history unavailable`.
+
+* Windows-only, and **unverified against the live API**: every unchecked endpoint/field is marked `# TODO(verify)` in
+  `history.py`.
+* Uses the local client's tokens, like the rest of vRY. A 401, 403 or 404 means "unavailable" and is not worked around.
+* At most 5 matches per player. Finished matches and per-player results are cached in `cache/` (git-ignored; it holds
+  other players' IDs from match data). Agent roles come from a table in `history.py`; a new agent shows as `Unknown`
+  until it is added.
+* Turn it off with `"lobby_history": false` in the `table` section of `config.json`.
+* Riot's API policy (see below) applies here too. Whether other players' match history counts as data the client hides
+  is not verified.
+* Tests: `pip install -r requirements-dev.txt`, then `pytest`.
+
 ## What about that Tweet?
 
 The [Tweet](https://twitter.com/PlayVALORANT/status/1539728676815642624), which details Riot's API policies, outlines how
