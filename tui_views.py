@@ -764,3 +764,58 @@ def scatter_fallback(index, points):
                     f"{profile.METRICS[y_key][0][:10]} {point['y']:>6.1f}\n",
                     style=rgb_style(CYAN) if point["ally"] else rgb_style(RED))
     return text
+
+
+# --- lobby leaders (list view's detail strip) ------------------------------------------------
+
+LEADERS = (("ACS", "acs", ".0f", 1), ("ADR", "adr", ".0f", 1), ("K/D", "kd", ".2f", 1), ("KAST", "kast", "%", 100),
+           ("First bloods", "first_blood", "%", 100), ("Util / round", "util", ".1f", 1))
+
+
+def _leader_value(value, spec):
+    return f"{value * 100:.0f}%" if spec == "%" else format(value, spec)
+
+
+def leaders_view(rows, selected=None):
+    """Who tops each stat in the lobby (name coloured by team, you in your own colour) and each team's average."""
+    profiles = {r.puuid: p for r, p in ((r, lobby_profiles(rows).get(r.puuid)) for r in rows) if p}
+    if not profiles:
+        return Text("Lobby leaders appear once players' match stats have loaded.", style=DIM)
+    by_puuid = {r.puuid: r for r in rows}
+    text = Text("Lobby leaders\n", style="bold")
+    for label, key, spec, _ in LEADERS:
+        ranked = sorted(((p[key], puuid) for puuid, p in profiles.items() if p.get(key) is not None), reverse=True)
+        text.append(f"{label:<13}", style=DIM)
+        for value, puuid in ranked[:2]:
+            row = by_puuid[puuid]
+            name = name_text(row)
+            name.truncate(11, overflow="ellipsis")
+            if puuid == selected:
+                name.stylize("reverse")
+            text.append_text(name)
+            text.append(f" {_leader_value(value, spec)}  ", style="bold")
+        text.append("\n")
+    sides = {True: [], False: []}
+    for puuid, p in profiles.items():
+        sides[by_puuid[puuid].ally].append(p)
+    if all(sides.values()):
+        text.append("\nTeam average ", style=DIM)
+        text.append("(you / enemy)\n", style=DIM)
+        for label, key, spec, _ in LEADERS[:4]:
+            cells = []
+            for ally in (True, False):
+                values = [p[key] for p in sides[ally] if p.get(key) is not None]
+                cells.append(_leader_value(sum(values) / len(values), spec) if values else "—")
+            text.append(f"{label:<13}", style=DIM)
+            text.append(f"{cells[0]:>6}", style=rgb_style(ALLY_RGB))
+            text.append("  /  ", style=DIM)
+            text.append(f"{cells[1]:<6}\n", style=rgb_style(ENEMY_RGB))
+    return text
+
+
+def detail_view(row, rows, agent_names, map_name, axes):
+    """The list view's detail strip, two parts: (card + lobby leaders, profile) for the selected row."""
+    if row is None:
+        return Text("No player selected yet.", style=DIM), Text("")
+    left = Group(card_text(row, agent_names, map_name, axes), Text(""), leaders_view(rows, row.puuid))
+    return left, profile_view(rows, row.puuid)

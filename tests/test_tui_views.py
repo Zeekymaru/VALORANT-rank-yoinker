@@ -327,3 +327,9 @@ def test_archetype_shows_on_the_card_profile_view_and_heatmap():
     assert "Style  " in view and "relative to this lobby" in view
     heat = plain(tui_views.heat_view(rows, "a2"))
     assert "Style" in heat.splitlines()[3] or any("Style" in line for line in heat.splitlines()[:6])
+
+
+def test_leaders_view_names_the_top_player_per_stat_and_both_team_averages():
+    text = plain(tui_views.leaders_view(_lobby()))
+    assert "Lobby leaders" in text and "ACS" in text and "KAST" in text and "Team average" in text
+    assert plain(tui_views.leaders_view([])).startswith("Lobby leaders appear")

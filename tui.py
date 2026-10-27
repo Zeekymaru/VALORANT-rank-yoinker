@@ -25,7 +25,7 @@ from lobby_data import DemoSource, LobbyModel, LobbyReset, Status
 import player_profile
 from tui_views import (COLUMNS, GRAPHS, LOBBY_GRAPHS, agents_view, card_text, fingerprint, form_view, heat_view,
                        lobby_axes, profile_view, row_cells, rr_series, rr_view, scatter_caption, scatter_fallback,
-                       scatter_points, sides_view, team_stats, team_strip, teams_view, _few_games)
+                       scatter_points, sides_view, detail_view, team_stats, team_strip, teams_view, _few_games)
 
 try:  # optional: real charts for the RR trend (pip install -r requirements-tui-charts.txt)
     from textual_plotext import PlotextPlot
@@ -33,7 +33,7 @@ except ImportError:  # pragma: no cover - depends on the environment
     PlotextPlot = None
 
 STATE_LABELS = {"INGAME": "In-Game", "PREGAME": "Agent Select", "MENUS": "In-Menus"}
-VIEWS = {"list": "players", "cards": "cards"}  # view name -> id of the widget that shows it
+VIEWS = {"list": "players-pane", "cards": "cards"}  # view name -> id of the widget that shows it
 CARD_WIDTH = 40  # columns per card, including its border and gap
 
 
@@ -149,6 +149,10 @@ class LobbyApp(App):
     #summary { height: 2; padding: 0 1; }
     #body { height: 1fr; }
     #views { width: 3fr; }
+    #players { height: auto; max-height: 14; }
+    #detail { height: 1fr; border-top: solid $primary-darken-2; margin-top: 1; }
+    #detail-left { width: 54; padding: 0 1; }
+    #detail-right { width: 1fr; padding: 0 1; border-left: solid $primary-darken-3; }
     LobbyApp.-cards #views { width: 4fr; }
     #side { width: 2fr; min-width: 46; padding: 0 1; border-left: solid $primary-darken-2; }
     #graph-buttons { layout: grid; grid-size: 4; grid-gutter: 0 1; grid-rows: 3; height: 6; }
@@ -201,7 +205,11 @@ class LobbyApp(App):
         yield Static(id="summary")
         with Horizontal(id="body"):
             with ContentSwitcher(initial=VIEWS["list"], id="views"):
-                yield DataTable(id="players")
+                with Vertical(id="players-pane"):
+                    yield DataTable(id="players")
+                    with Horizontal(id="detail"):
+                        yield VerticalScroll(Static(id="detail-card"), id="detail-left")
+                        yield VerticalScroll(Static(id="detail-more"), id="detail-right")
                 yield CardView(id="cards")
             with Vertical(id="side"):
                 with Horizontal(id="graph-buttons"):
@@ -316,6 +324,7 @@ class LobbyApp(App):
         card = self._cards.get(puuid)
         if card is not None:
             card.update(self._card_content(row))
+        self._refresh_detail()
 
     def _refresh_prints(self):
         """A player's rank in the lobby changes whenever anyone's history arrives, so redo every fingerprint."""
@@ -436,7 +445,18 @@ class LobbyApp(App):
             self.show_graph(button_id[len("btn-"):])
             self._focus_active_view()  # keep the arrow keys moving through players
 
+    def _refresh_detail(self):
+        """The strip under the list: the selected player's card, profile and the lobby leaders."""
+        try:
+            left, right = detail_view(self.model.rows.get(self.selected), self.model.ordered, self.agent_names,
+                                      self.model.map_name, self._axes.get(self.selected))
+            self.query_one("#detail-card", Static).update(left)
+            self.query_one("#detail-more", Static).update(right)
+        except NoMatches:  # shutting down
+            pass
+
     def _refresh_graph(self):
+        self._refresh_detail()
         row = self.model.rows.get(self.selected)
         label = dict(GRAPHS)[self.graph]
         if self.graph in LOBBY_GRAPHS:

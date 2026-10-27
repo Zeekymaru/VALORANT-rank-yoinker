@@ -134,7 +134,7 @@ def test_refresh_key_restarts_the_demo():
 def test_v_toggles_between_list_and_cards_and_back():
     async def scenario(app, pilot):
         views = app.query_one("#views", ContentSwitcher)
-        assert app.view == "list" and views.current == "players"
+        assert app.view == "list" and views.current == "players-pane"
         await pilot.press("v")
         await pilot.pause(0.2)
         assert app.view == "cards" and views.current == "cards" and app.has_class("-cards")
@@ -146,7 +146,7 @@ def test_v_toggles_between_list_and_cards_and_back():
 
         await pilot.press("v")
         await pilot.pause(0.2)
-        assert app.view == "list" and views.current == "players" and not app.has_class("-cards")
+        assert app.view == "list" and views.current == "players-pane" and not app.has_class("-cards")
         assert app.focused is app.query_one("#players")
 
     run(scenario)
@@ -494,3 +494,16 @@ def test_reload_returns_to_the_live_lobby_and_saves_the_one_that_ended(tmp_path)
         assert lobby_store.list_saved(str(tmp_path))
 
     run(scenario, store_dir=str(tmp_path))
+
+
+def test_list_view_detail_strip_follows_the_selected_player():
+    async def scenario(app, pilot):
+        card = text_of(app.query_one("#detail-card", Static))
+        more = text_of(app.query_one("#detail-more", Static))
+        first = app.model.rows[app.selected].name
+        assert first in card and "Lobby leaders" in card and "Profile vs" in more
+        await pilot.press("down")
+        await pilot.pause(0.1)
+        assert app.model.rows[app.selected].name in text_of(app.query_one("#detail-card", Static))
+
+    run(scenario)

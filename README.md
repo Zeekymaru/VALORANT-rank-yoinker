@@ -120,7 +120,9 @@ and the role split), **Teams** (your team vs the enemy side by side) and **RR tr
 if `textual-plotext` is installed) and **Profile** (key 6), **Heatmap** (key 7) and **Scatter** (key 8), see below. Arrow keys pick the player the graph is about, `r` reloads, `q` quits.
 
 The left side has two views, switched with `v` or the **View** button. **List** is one compact line per player.
-**Cards** shows each player as a card (identity, rank, season stats and the full Recent block), your team and the
+Under the table, the list view has a **detail strip** for the selected player: their card, a **Lobby leaders** block
+(who tops ACS, ADR, K/D, KAST, first bloods and utility, plus each team's average) and their profile radar, all
+following the arrow keys. **Cards** shows each player as a card (identity, rank, season stats and the full Recent block), your team and the
 enemy team in separate sections, three cards per row on a wide terminal. In the card view the arrow keys move
 between cards and clicking a card selects it. The selected player is shared between the views, and the graph panel
 follows it.
