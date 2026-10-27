@@ -20,6 +20,7 @@ from src.errors import Error
 from src.Loadouts import Loadouts
 from src.logs import Logging
 from src.names import Names
+import history
 from src.player_stats import PlayerStats
 from src.presences import Presences
 from src.rank import Rank
@@ -117,6 +118,17 @@ try:
     Server.start_server()
 
     agent_dict = content.get_all_agents()
+
+    history.set_log_sink(log)
+
+    def history_columns(player_subject):
+        # Top Agents / Recent WR / Roles cells for one player (experimental, see history.py)
+        if not cfg.table.get("lobby_history", True):
+            return ["", "", ""]
+        summary = history.summarise(
+            player_subject, Requests.pd_url, Requests.get_headers(), history.AGENT_ROLES
+        )
+        return history.format_columns(summary, agent_dict)
 
     map_info = content.get_all_maps()
     map_urls = content.get_map_urls(map_info)
@@ -644,6 +656,7 @@ try:
                                 kd,
                                 level,
                                 ranked_rating_earned,
+                                *history_columns(player["Subject"]),
                             ]
                         )
 
@@ -900,6 +913,7 @@ try:
                                 kd,
                                 level,
                                 ranked_rating_earned,
+                                *history_columns(player["Subject"]),
                             ]
                         )
 
@@ -1053,6 +1067,9 @@ try:
                                     kd,
                                     level,
                                     ranked_rating_earned,
+                                    "",
+                                    "",
+                                    "",
                                 ]
                             )
 

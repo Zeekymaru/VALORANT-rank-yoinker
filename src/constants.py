@@ -204,7 +204,8 @@ DEFAULT_CONFIG = {
         "headshot_percent": True,
         "winrate": True,
         "kd": False,
-        "level": True
+        "level": True,
+        "lobby_history": True
     },
     "flags": {
         "last_played": True,
