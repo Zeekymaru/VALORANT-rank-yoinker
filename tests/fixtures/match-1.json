@@ -1,0 +1,10 @@
+{
+  "players": [
+    {"subject": "p-target", "teamId": "Red", "characterId": "AGENT-JETT"},
+    {"subject": "p-other", "teamId": "Blue", "characterId": "agent-sage"}
+  ],
+  "teams": [
+    {"teamId": "Red", "won": true},
+    {"teamId": "Blue", "won": false}
+  ]
+}
