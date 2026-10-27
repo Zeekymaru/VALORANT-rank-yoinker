@@ -140,3 +140,5 @@ cython_debug/
 #config file
 .config.json
 config.json
+# Runtime cache of match history / per-player summaries (contains player IDs)
+cache/
