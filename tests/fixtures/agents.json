@@ -1,0 +1,8 @@
+{
+  "data": [
+    {"uuid": "AGENT-JETT", "displayName": "Jett", "role": {"displayName": "Duelist"}},
+    {"uuid": "agent-sage", "displayName": "Sage", "role": {"displayName": "Sentinel"}},
+    {"uuid": "agent-omen", "displayName": "Omen", "role": {"displayName": "Controller"}},
+    {"uuid": "agent-norole", "displayName": "NoRole"}
+  ]
+}

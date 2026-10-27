@@ -1,0 +1,7 @@
+{
+  "History": [
+    {"MatchID": "match-1", "QueueID": "competitive"},
+    {"MatchID": "match-2", "QueueID": "competitive"},
+    {"MatchID": "match-3", "QueueID": "competitive"}
+  ]
+}
