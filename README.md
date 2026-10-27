@@ -81,8 +81,8 @@ One extra **Recent** column for each player in the lobby (INGAME and PREGAME), t
 
 ```
 60% 3/5                      win rate and sample size (colored like the WR column)
-Sova · Skye · Viper          top 3 agents in recent competitive matches (×N when played more than once)
-Init2 Ctrl1 Duel1 Sent1      matches per role
+Sova 1-0 · Skye 1-0 · Viper 1-0   top 3 agents in those matches, as wins-losses with each agent
+Init2 Ctrl1 Duel1 Sent1           games per role (not wins), across all the sampled matches
 ```
 
 Players whose history is private or unavailable show `history unavailable`; players with no recent competitive games

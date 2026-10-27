@@ -228,6 +228,7 @@ def _aggregate(results, agent_roles):
     if not results:
         return _unavailable(REASON_NO_RESULT)
     agents = Counter(agent for agent, _ in results)
+    agent_wins = Counter(agent for agent, won in results if won)
     roles = Counter(agent_roles.get(agent, UNKNOWN_ROLE) for agent, _ in results)
     # results are newest first and sorted() is stable, so ties go to the most recent agent
     top = sorted(agents.items(), key=lambda kv: -kv[1])[:TOP_AGENT_COUNT]
@@ -235,7 +236,8 @@ def _aggregate(results, agent_roles):
         "available": True,
         "games": len(results),
         "wins": sum(1 for _, won in results if won),
-        "top_agents": [{"agent_id": agent, "games": games} for agent, games in top],
+        "top_agents": [{"agent_id": agent, "games": games, "wins": agent_wins[agent]}
+                       for agent, games in top],
         "roles": dict(roles),
     }
 
@@ -301,16 +303,22 @@ def win_rate_rgb(percent):
             return tuple(round(a + (b - a) * ratio) for a, b in zip(start, end))
 
 
-def _agent_label(name, games):
-    return name if games == 1 else f"{name} ×{games}"
+def _agent_label(name, games, wins=None):
+    """'Sage 2-0' (wins-losses with that agent). Summaries cached before per-agent
+    wins existed have no 'wins'; those fall back to 'Sage ×2'."""
+    if wins is None:
+        return name if games == 1 else f"{name} ×{games}"
+    return f"{name} {wins}-{games - wins}"
 
 
 def format_cell(summary, agent_names, wr_color=None, dim=None):
     """One compact table cell, three lines: win rate, top agents, roles.
 
         60% 3/5
-        Sova · Skye · Viper
+        Sova 1-0 · Skye 0-1 · Viper 1-0
         Init2 Ctrl1 Duel1 Sent1
+
+    The agent line is wins-losses per agent; the roles line is games per role.
 
     agent_names maps lowercase agent ID -> display name (main.py's agent_dict).
     wr_color(percent, text) -> str colors the whole "60% 3/5" text, and
@@ -324,7 +332,7 @@ def format_cell(summary, agent_names, wr_color=None, dim=None):
     games, wins = summary["games"], summary["wins"]
     percent = int(100 * wins / games + 0.5)
     rate = wr_color(percent, f"{percent}% {wins}/{games}")
-    agents = " · ".join(_agent_label(agent_names.get(a["agent_id"], "Unknown"), a["games"])
+    agents = " · ".join(_agent_label(agent_names.get(a["agent_id"], "Unknown"), a["games"], a.get("wins"))
                         for a in summary["top_agents"])
     roles = " ".join(f"{ROLE_SHORT.get(role, role)}{n}" for role, n in
                      sorted(summary["roles"].items(), key=lambda kv: (-kv[1], kv[0])))

@@ -77,8 +77,8 @@ def run_summary(http, roles, tmp_path, **kwargs):
 def test_normal_aggregation(standard_http, roles, tmp_path):
     summary = run_summary(standard_http, roles, tmp_path)
     assert summary["available"] is True
-    assert summary["top_agents"] == [{"agent_id": "agent-jett", "games": 2},
-                                     {"agent_id": "agent-sage", "games": 1}]
+    assert summary["top_agents"] == [{"agent_id": "agent-jett", "games": 2, "wins": 1},
+                                     {"agent_id": "agent-sage", "games": 1, "wins": 1}]
     assert summary["roles"] == {"Duelist": 2, "Sentinel": 1}
 
 
@@ -86,13 +86,20 @@ def test_win_rate_and_sample_size(standard_http, roles, tmp_path):
     summary = run_summary(standard_http, roles, tmp_path)
     assert (summary["games"], summary["wins"]) == (3, 2)
     cell = history.format_cell(summary, {"agent-jett": "Jett", "agent-sage": "Sage"})
+    assert cell == "67% 2/3\nJett 1-1 · Sage 1-0\nDuel2 Sent1"
+
+
+def test_summary_cached_before_per_agent_wins_still_renders():
+    legacy = {"available": True, "games": 3, "wins": 2, "roles": {"Duelist": 2, "Sentinel": 1},
+              "top_agents": [{"agent_id": "agent-jett", "games": 2}, {"agent_id": "agent-sage", "games": 1}]}
+    cell = history.format_cell(legacy, {"agent-jett": "Jett", "agent-sage": "Sage"})
     assert cell == "67% 2/3\nJett ×2 · Sage\nDuel2 Sent1"
 
 
 def test_cell_styling_hooks(standard_http, roles, tmp_path):
     summary = run_summary(standard_http, roles, tmp_path)
     cell = history.format_cell(summary, {}, wr_color=lambda pct, text: f"<{pct}:{text}>", dim=lambda text: f"[{text}]")
-    assert cell.splitlines() == ["<67:67% 2/3>", "Unknown ×2 · Unknown", "[Duel2 Sent1]"]
+    assert cell.splitlines() == ["<67:67% 2/3>", "Unknown 1-1 · Unknown 1-0", "[Duel2 Sent1]"]
     assert history.format_cell(history._unavailable(), {}, dim=lambda text: f"[{text}]") == "[history unavailable]"
 
 
@@ -144,7 +151,7 @@ def test_team_without_won_field_is_skipped(roles, tmp_path):
                                 "match-3": "match-3.json"}))
     summary = run_summary(http, roles, tmp_path)
     assert (summary["games"], summary["wins"]) == (2, 2)
-    assert summary["top_agents"][0] == {"agent_id": "agent-jett", "games": 1}
+    assert summary["top_agents"][0] == {"agent_id": "agent-jett", "games": 1, "wins": 1}
 
 
 def test_only_unknown_outcomes_is_unavailable(roles, tmp_path):
