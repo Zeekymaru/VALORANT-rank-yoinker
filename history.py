@@ -100,6 +100,8 @@ def _write_json(path, data):
 def _get_json(url, headers, params=None, http_get=None):
     """GET and parse JSON. None for 401/403/404, any non-2xx, or any failure."""
     http_get = http_get or requests.get
+    # TODO(verify): default TLS verification works against the pd hosts
+    # (main.py passes verify=False everywhere; this module deliberately doesn't).
     try:
         response = http_get(url, headers=headers, params=params, timeout=REQUEST_TIMEOUT)
         if response.status_code in UNAVAILABLE_STATUSES:
