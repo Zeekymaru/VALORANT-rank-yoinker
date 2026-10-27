@@ -87,6 +87,47 @@ def test_form_view_lists_each_game():
     assert any(line.startswith(" 3  W  Sage") and "RR" not in line for line in lines)  # no RR value
 
 
+def test_card_text_has_identity_season_stats_and_recent_history():
+    row = loaded_row(history=summary(map={"games": 2, "wins": 1}))
+    lines = tui_views.card_text(row, NAMES, "Ascent").plain.splitlines()
+    assert lines == [
+        "■ Zeek#1",
+        "Jett  Lvl 120",
+        "Gold 3 (40)   peak Plat 1 (e7a3)",
+        "HS 22  WR 51 (30)  ΔRR +18",
+        "",
+        "67% 2/3   ● ○ ● ",
+        "Jett 1-1 · Sage 1-0",
+        "Duel2 Sent1",
+        "Atk 33% (3) · Def 60% (5)",
+        "Ascent 1-1",
+    ]
+
+
+def test_card_text_while_loading_and_without_history():
+    row = PlayerRow(puuid="p", name="Zeek#1", agent="Jett")
+    text = tui_views.card_text(row, NAMES, "Ascent").plain
+    assert text.splitlines()[0] == "Zeek#1" and text.endswith("history …")  # no party square, still loading
+    assert "…" in text.splitlines()[2]  # rank not loaded yet
+
+    skipped = tui_views.card_text(loaded_row(history_state="skipped"), NAMES).plain
+    assert skipped.splitlines()[-1].startswith("HS ")  # menus: no history block at all
+
+    for reason, message in ((history.REASON_NO_GAMES, "no recent comp games"),
+                            (history.REASON_UNAVAILABLE, "history unavailable")):
+        card = tui_views.card_text(loaded_row(history=history._unavailable(reason)), NAMES).plain
+        assert card.splitlines()[-1] == message
+
+
+def test_recent_block_leaves_out_what_the_summary_lacks():
+    legacy = summary(top_agents=[{"agent_id": "agent-jett", "games": 2}])
+    del legacy["attack"], legacy["defense"], legacy["matches"]
+    lines = tui_views.recent_block(legacy, NAMES, "Ascent").plain.splitlines()
+    assert lines == ["67% 2/3   ", "Jett ×2", "Duel2 Sent1"]  # no sides, no form dots, no map record
+    assert tui_views.recent_block(summary(map={"games": 0, "wins": 0}), NAMES, "Ascent").plain.endswith("Ascent -")
+    assert "Ascent" not in tui_views.recent_block(summary(map={"games": 2, "wins": 1}), NAMES, "").plain
+
+
 def test_views_explain_missing_data():
     assert "Loading" in plain(tui_views.form_view(None, NAMES, MAPS))
     assert "No recent competitive games" in plain(tui_views.sides_view(history._unavailable(history.REASON_NO_GAMES)))

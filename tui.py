@@ -1,4 +1,4 @@
-"""Textual TUI for vRY: a live lobby table plus a graph panel you switch with buttons or keys.
+"""Textual TUI for vRY: a live lobby (compact list or player cards) plus a graph panel you switch with buttons or keys.
 
     python tui.py          live lobby (VALORANT must be running)
     python tui.py --demo   fake lobby with realistic numbers, no VALORANT needed
@@ -12,11 +12,12 @@ from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.widgets import Button, ContentSwitcher, DataTable, Footer, Static
 
 from lobby_data import DemoSource, LobbyModel, Status
-from tui_views import (COLUMNS, GRAPHS, agents_view, form_view, row_cells, rr_series, rr_view, sides_view,
+from tui_views import (COLUMNS, GRAPHS, agents_view, card_text, form_view, row_cells, rr_series, rr_view, sides_view,
                        team_strip, teams_view)
 
 try:  # optional: real charts for the RR trend (pip install -r requirements-tui-charts.txt)
@@ -25,25 +26,80 @@ except ImportError:  # pragma: no cover - depends on the environment
     PlotextPlot = None
 
 STATE_LABELS = {"INGAME": "In-Game", "PREGAME": "Agent Select", "MENUS": "In-Menus"}
+VIEWS = {"list": "players", "cards": "cards"}  # view name -> id of the widget that shows it
+CARD_WIDTH = 40  # columns per card, including its border and gap
+
+
+class PlayerCard(Static, can_focus=True):
+    """One player as a card. Focusing or clicking it selects the player; the arrow keys move between cards."""
+
+    BINDINGS = [
+        Binding("left", "step(-1, 0)", "Previous", show=False),
+        Binding("right", "step(1, 0)", "Next", show=False),
+        Binding("up", "step(0, -1)", "Up", show=False),
+        Binding("down", "step(0, 1)", "Down", show=False),
+    ]
+
+    def __init__(self, puuid, content, **kwargs):
+        super().__init__(content, **kwargs)
+        self.puuid = puuid
+
+    def on_click(self):
+        self.app.select_player(self.puuid, focus_card=True)
+
+    def on_focus(self):
+        self.app.select_player(self.puuid)
+
+    def action_step(self, dx: int, dy: int):
+        self.app.step_selection(dx, dy)
+
+
+class CardView(VerticalScroll):
+    """Your team's cards, then the enemy team's, each in a grid that fits as many columns as the width allows."""
+
+    columns = 1
+
+    def compose(self) -> ComposeResult:
+        yield Static("YOUR TEAM", id="ally-title", classes="team-title")
+        yield Grid(id="cards-ally", classes="card-grid")
+        yield Static("ENEMY TEAM", id="enemy-title", classes="team-title")
+        yield Grid(id="cards-enemy", classes="card-grid")
+
+    def on_resize(self, event):
+        self.fit_columns()
+
+    def fit_columns(self):
+        self.columns = max(1, (self.size.width - 2) // CARD_WIDTH)
+        for grid in self.query(Grid):
+            grid.styles.grid_size_columns = self.columns
 
 
 class LobbyApp(App):
     TITLE = "vRY lobby"
     CSS = """
-    #status { height: 1; padding: 0 1; background: $boost; }
+    #topbar { height: 3; }
+    #status { width: 1fr; height: 3; padding: 0 1; background: $boost; content-align: left middle; }
+    #btn-view { min-width: 22; }
     #summary { height: 2; padding: 0 1; }
     #body { height: 1fr; }
-    #players { width: 3fr; }
+    #views { width: 3fr; }
+    LobbyApp.-cards #views { width: 4fr; }
     #side { width: 2fr; min-width: 46; padding: 0 1; border-left: solid $primary-darken-2; }
     #graph-buttons { height: 3; }
     #graph-buttons Button { min-width: 9; margin-right: 1; }
     #graph-title { height: 1; text-style: bold; margin-bottom: 1; }
     #graphs { height: 1fr; }
     #rr-plot { height: 14; }
+    .team-title { height: 1; margin-top: 1; padding: 0 1; text-style: bold; color: $text-muted; }
+    .card-grid { grid-size: 2; grid-rows: auto; grid-gutter: 0 1; height: auto; padding: 0 1; }
+    PlayerCard { height: auto; min-height: 9; padding: 0 1; border: round $primary-darken-3; }
+    PlayerCard.-selected { border: round $accent; }
+    PlayerCard:focus { border: heavy $accent; }
     """
     BINDINGS = [
         Binding("q", "quit", "Quit"),
         Binding("r", "refresh", "Refresh"),
+        Binding("v", "toggle_view", "List/Cards"),
         *[Binding(str(number), f"graph('{key}')", label) for number, (key, label) in enumerate(GRAPHS, 1)],
     ]
 
@@ -52,17 +108,23 @@ class LobbyApp(App):
         self.source = source
         self.model = LobbyModel()
         self.stop_event = threading.Event()
-        self.selected = None  # puuid of the highlighted row
+        self.selected = None  # puuid of the highlighted player, in either view
         self.graph = GRAPHS[0][0]
+        self.view = "list"
         self._column_keys = []
+        self._cards = {}
 
     # --- layout -------------------------------------------------------------------------
 
     def compose(self) -> ComposeResult:
-        yield Static(id="status")
+        with Horizontal(id="topbar"):
+            yield Static(id="status")
+            yield Button("v View: List", id="btn-view")
         yield Static(id="summary")
         with Horizontal(id="body"):
-            yield DataTable(id="players")
+            with ContentSwitcher(initial=VIEWS["list"], id="views"):
+                yield DataTable(id="players")
+                yield CardView(id="cards")
             with Vertical(id="side"):
                 with Horizontal(id="graph-buttons"):
                     for number, (key, label) in enumerate(GRAPHS, 1):
@@ -106,17 +168,18 @@ class LobbyApp(App):
         except Exception:  # the app is closing
             pass
 
-    def handle_event(self, event):
+    async def handle_event(self, event):
         kind = self.model.apply(event)
         if kind == "reset":
             self._rebuild_table()
+            await self._rebuild_cards()
         elif kind == "row":
             self._update_row(event.puuid)
         self._refresh_chrome()
         if kind in ("reset", "row"):
             self._refresh_graph()
 
-    # --- players table --------------------------------------------------------------------
+    # --- the two views ----------------------------------------------------------------------
 
     def _rebuild_table(self):
         table = self.query_one("#players", DataTable)
@@ -129,6 +192,25 @@ class LobbyApp(App):
         if puuids:
             table.move_cursor(row=puuids.index(self.selected))
 
+    async def _rebuild_cards(self):
+        view = self.query_one("#cards", CardView)
+        ally_grid, enemy_grid = self.query_one("#cards-ally", Grid), self.query_one("#cards-enemy", Grid)
+        await ally_grid.remove_children()
+        await enemy_grid.remove_children()
+        self._cards = {}
+        for row in self.model.ordered:
+            card = PlayerCard(row.puuid, self._card_content(row), id=f"card-{len(self._cards)}")
+            self._cards[row.puuid] = card
+            await (ally_grid if row.ally else enemy_grid).mount(card)
+        has_enemy = any(not row.ally for row in self.model.ordered)
+        self.query_one("#enemy-title").display = has_enemy
+        enemy_grid.display = has_enemy
+        view.fit_columns()
+        self._mark_selected()
+
+    def _card_content(self, row):
+        return card_text(row, self.source.agent_names, self.model.map_name)
+
     def _update_row(self, puuid):
         row = self.model.rows.get(puuid)
         if row is None:
@@ -136,11 +218,78 @@ class LobbyApp(App):
         table = self.query_one("#players", DataTable)
         for column_key, cell in zip(self._column_keys, row_cells(row)):
             table.update_cell(puuid, column_key, cell, update_width=True)
+        card = self._cards.get(puuid)
+        if card is not None:
+            card.update(self._card_content(row))
+
+    def action_toggle_view(self):
+        self.view = "cards" if self.view == "list" else "list"
+        self.query_one("#views", ContentSwitcher).current = VIEWS[self.view]
+        self.set_class(self.view == "cards", "-cards")  # the cards get more of the width (more per row)
+        self.query_one("#btn-view", Button).label = f"v View: {'Cards' if self.view == 'cards' else 'List'}"
+        self._focus_active_view()
+
+    def _focus_active_view(self):
+        if self.view == "cards" and self.selected in self._cards:
+            self._cards[self.selected].focus()
+        else:
+            self.query_one("#players", DataTable).focus()
+
+    # --- selection (shared by both views) ---------------------------------------------------
+
+    def select_player(self, puuid, focus_card=False):
+        if puuid in self.model.rows and puuid != self.selected:
+            self.selected = puuid
+            table = self.query_one("#players", DataTable)
+            order = [row.puuid for row in self.model.ordered]
+            if table.cursor_row != order.index(puuid):
+                table.move_cursor(row=order.index(puuid))
+            self._mark_selected()
+            self._refresh_graph()
+        if focus_card and puuid in self._cards:
+            self._cards[puuid].focus()
+
+    def _mark_selected(self):
+        for puuid, card in self._cards.items():
+            card.set_class(puuid == self.selected, "-selected")
+
+    def _card_positions(self):
+        """puuid -> (row, column) in the card layout: your team's grid first, then the enemy team's."""
+        columns = self.query_one("#cards", CardView).columns
+        positions, row_offset = {}, 0
+        for ally in (True, False):
+            group = [r.puuid for r in self.model.ordered if r.ally == ally]
+            for index, puuid in enumerate(group):
+                positions[puuid] = (row_offset + index // columns, index % columns)
+            row_offset += -(-len(group) // columns)  # rows used, rounded up
+        return positions
+
+    def step_selection(self, dx, dy):
+        """Arrow keys in the card view: left/right walk the cards in order, up/down move one grid row."""
+        order = [row.puuid for row in self.model.ordered]
+        if self.selected not in order:
+            return
+        index = order.index(self.selected)
+        if dx:
+            target = order[max(0, min(len(order) - 1, index + dx))]
+        else:
+            positions = self._card_positions()
+            row, column = positions[self.selected]
+            candidates = [p for p, (r, _) in positions.items() if r == row + dy]
+            if not candidates:
+                return
+            target = min(candidates, key=lambda p: abs(positions[p][1] - column))
+        self.select_player(target, focus_card=True)
 
     def on_data_table_row_highlighted(self, event):
-        if event.row_key is not None and event.row_key.value is not None:
-            self.selected = event.row_key.value
-            self._refresh_graph()
+        if event.row_key is None or event.row_key.value is None:
+            return
+        if event.cursor_row != event.data_table.cursor_row:
+            return  # stale: the table was cleared or rebuilt since this event was posted
+        try:
+            self.select_player(event.row_key.value)
+        except NoMatches:  # a late event while the app is shutting down
+            pass
 
     # --- status, summary, graphs ----------------------------------------------------------
 
@@ -165,9 +314,12 @@ class LobbyApp(App):
         self.show_graph(key)
 
     def on_button_pressed(self, event: Button.Pressed):
-        if event.button.id and event.button.id.startswith("btn-"):
-            self.show_graph(event.button.id[len("btn-"):])
-            self.query_one("#players", DataTable).focus()  # keep the arrow keys moving through players
+        button_id = event.button.id or ""
+        if button_id == "btn-view":
+            self.action_toggle_view()
+        elif button_id.startswith("btn-"):
+            self.show_graph(button_id[len("btn-"):])
+            self._focus_active_view()  # keep the arrow keys moving through players
 
     def _refresh_graph(self):
         row = self.model.rows.get(self.selected)

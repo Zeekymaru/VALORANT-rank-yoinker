@@ -119,6 +119,12 @@ agent, map, side rounds and RR), **Atk/Def** (the team's round win rate per side
 and the role split), **Teams** (your team vs the enemy side by side) and **RR trend** (a sparkline, or a line chart
 if `textual-plotext` is installed). Arrow keys pick the player the graph is about, `r` reloads, `q` quits.
 
+The left side has two views, switched with `v` or the **View** button. **List** is one compact line per player.
+**Cards** shows each player as a card (identity, rank, season stats and the full Recent block), your team and the
+enemy team in separate sections, three cards per row on a wide terminal. In the card view the arrow keys move
+between cards and clicking a card selects it. The selected player is shared between the views, and the graph panel
+follows it.
+
 Use a **separate venv**: Textual needs `rich>=14.2` and `Pygments>=2.19.2`, while `requirements.txt` pins older ones.
 
 ```
@@ -135,7 +141,7 @@ venv-tui\Scripts\python.exe tui.py            the live lobby (VALORANT must be r
 * It polls the client's presence every 2 seconds for the game state, and leaves out the skin column, Discord status
   and the mobile web server. Rank, HS, WR, level, ΔRR, party squares and the history data come from the same code as
   the console table. The lobby history settings above (`lobby_history`, `map_history`) apply here too.
-* Not built yet: the card-grid view (planned as a toggle with the current list), sorting and filtering.
+* Not built yet: sorting and filtering.
 
 ## What about that Tweet?
 

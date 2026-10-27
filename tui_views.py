@@ -104,13 +104,16 @@ def recent_text(row):
     return Text(f"{pct}% {summary['wins']}/{summary['games']}", style=wr_style(pct))
 
 
-def form_text(row):
+def _form_dots(summary):
     """One dot per sampled game, newest first: filled green = win, hollow red = loss."""
-    summary = row.history if row.history_state == "done" else None
     text = Text()
     for match in (summary or {}).get("matches", []):
         text.append("● " if match["won"] else "○ ", style=rgb_style(GREEN if match["won"] else RED))
     return text
+
+
+def form_text(row):
+    return _form_dots(row.history if row.history_state == "done" else None)
 
 
 def hs_text(row):
@@ -126,6 +129,102 @@ def row_cells(row):
         peak_text(row), hs_text(row), wr_text(row), Text(_num(row.level)), delta_text(row),
         recent_text(row), form_text(row),
     ]
+
+
+# --- card view ----------------------------------------------------------------------------
+
+def _agent_record(name, games, wins):
+    """'Sage 2-0' (wins-losses); summaries cached before per-agent wins existed give 'Sage ×2'."""
+    if wins is None:
+        return name if games == 1 else f"{name} ×{games}"
+    return f"{name} {wins}-{games - wins}"
+
+
+def _sides_line(summary):
+    if "attack" not in summary or "defense" not in summary:
+        return None
+    line = Text()
+    for index, (label, key) in enumerate((("Atk", "attack"), ("Def", "defense"))):
+        record = summary[key]
+        pct = percent(record["won"], record["rounds"])
+        line.append(" · " if index else "")
+        line.append(f"{label} ")
+        if pct is None:
+            line.append("-", style=DIM)
+        else:
+            line.append(f"{pct}% ({record['rounds']})", style=wr_style(pct))
+    return line
+
+
+def recent_block(summary, agent_names, map_name=""):
+    """The card's history lines, like the console's Recent cell:
+
+        60% 3/5  ● ● ○ ● ○
+        Sova 1-0 · Skye 0-1 · Viper 1-0
+        Init2 Ctrl1 Duel1 Sent1
+        Atk 53% (32) · Def 48% (31)
+        Ascent 2-1
+    """
+    if not _usable(summary):
+        reason = (summary or {}).get("reason")
+        return Text("no recent comp games" if reason == history.REASON_NO_GAMES else "history unavailable", style=DIM)
+    pct = percent(summary["wins"], summary["games"])
+    text = Text(f"{pct}% {summary['wins']}/{summary['games']}", style=wr_style(pct) + " bold")
+    text.append("   ")
+    text.append_text(_form_dots(summary))
+    text.append("\n" + " · ".join(_agent_record(agent_names.get(a["agent_id"], "Unknown"), a["games"], a.get("wins"))
+                                  for a in summary["top_agents"]))
+    roles = " ".join(f"{history.ROLE_SHORT.get(role, role)}{count}" for role, count in
+                     sorted(summary["roles"].items(), key=lambda kv: (-kv[1], kv[0])))
+    text.append("\n" + roles, style=DIM)
+    sides = _sides_line(summary)
+    if sides is not None:
+        text.append("\n")
+        text.append_text(sides)
+    record = summary.get("map")
+    if map_name and record is not None:
+        if record["games"]:
+            map_pct = percent(record["wins"], record["games"])
+            text.append(f"\n{map_name} {record['wins']}-{record['games'] - record['wins']}", style=wr_style(map_pct))
+        else:
+            text.append(f"\n{map_name} -", style=DIM)
+    return text
+
+
+def card_text(row, agent_names, map_name=""):
+    """Everything about one player for the card view: identity, rank, season stats, then recent history."""
+    text = Text()
+    if row.party:
+        text.append_text(party_text(row))
+        text.append(" ")
+    name = name_text(row)
+    name.stylize("bold")
+    text.append_text(name)
+    text.append("\n")
+    text.append_text(agent_text(row))
+    if row.level is not None:
+        text.append(f"  Lvl {row.level}", style=DIM)
+    text.append("\n")
+    text.append_text(rank_text(row))
+    if row.rr not in (None, ""):
+        text.append(f" ({row.rr})")
+    if row.peak:
+        text.append("   peak ", style=DIM)
+        text.append_text(peak_text(row))
+    text.append("\nHS ")
+    text.append_text(hs_text(row))
+    text.append("  WR ")
+    text.append_text(wr_text(row))
+    text.append("  ΔRR ")
+    text.append_text(delta_text(row))
+    if row.history_state == "skipped":
+        return text
+    text.append("\n\n")
+    if row.history_state != "done":
+        text.append("history …", style=DIM)
+    else:
+        text.append_text(recent_block(row.history, agent_names, map_name))
+    return text
 
 
 # --- graph views --------------------------------------------------------------------------
