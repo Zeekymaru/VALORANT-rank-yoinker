@@ -421,55 +421,138 @@ def team_strip(rows):
 
 # --- profile radar ------------------------------------------------------------------------
 
-RADAR_RX, RADAR_RY = 13, 6  # outer ring radius in cells; x is doubled so the shape looks round in a terminal
+RADAR_RADIUS = 24  # outer hexagon radius in braille dots (4 dots per text row, 2 per column: dots are ~square)
 CYAN = (90, 200, 230)
+GRID = (95, 95, 105)
+RING = (140, 140, 155)
+_BRAILLE = ((0x01, 0x08), (0x02, 0x10), (0x04, 0x20), (0x40, 0x80))  # [row in cell][column in cell]
 
 
-def _line(canvas, a, b, char, style):
-    (x0, y0), (x1, y1) = a, b
-    steps = max(abs(x1 - x0), abs(y1 - y0), 1)
-    for i in range(steps + 1):
-        x, y = round(x0 + (x1 - x0) * i / steps), round(y0 + (y1 - y0) * i / steps)
-        if canvas[y][x][0] in " ·":
-            canvas[y][x] = (char, style)
+def percentile_rgb(fraction):
+    """Red -> yellow -> green for a 0..1 lobby percentile, readable on a dark background."""
+    return history.win_rate_rgb(int(round(100 * fraction)))
+
+
+class _Dots:
+    """A canvas of braille dots in layers; a cell shows the union of its layers' dots in the top layer's colour."""
+
+    def __init__(self, cells_wide, cells_high):
+        self.w, self.h = cells_wide, cells_high
+        self.layers = {name: [[0] * cells_wide for _ in range(cells_high)] for name in ("grid", "ring", "fill", "edge")}
+
+    def plot(self, layer, x, y):
+        x, y = int(round(x)), int(round(y))
+        if 0 <= x < self.w * 2 and 0 <= y < self.h * 4:
+            self.layers[layer][y // 4][x // 2] |= _BRAILLE[y % 4][x % 2]
+
+    def line(self, layer, a, b):
+        steps = int(max(abs(b[0] - a[0]), abs(b[1] - a[1]), 1))
+        for i in range(steps + 1):
+            self.plot(layer, a[0] + (b[0] - a[0]) * i / steps, a[1] + (b[1] - a[1]) * i / steps)
+
+    def circle(self, layer, cx, cy, radius, dotted=False):
+        for step in range(0, 360, 3 if dotted else 1):
+            angle = math.radians(step)
+            self.plot(layer, cx + radius * math.cos(angle), cy + radius * math.sin(angle))
+
+    def fill(self, layer, polygon):
+        """Sparse stippled fill (one dot in four) so the grid and ring show through."""
+        ys = [p[1] for p in polygon]
+        for y in range(int(min(ys)), int(max(ys)) + 1):
+            crossings = []
+            for (x0, y0), (x1, y1) in zip(polygon, polygon[1:] + polygon[:1]):
+                if (y0 <= y < y1) or (y1 <= y < y0):
+                    crossings.append(x0 + (y - y0) * (x1 - x0) / (y1 - y0))
+            crossings.sort()
+            for left, right in zip(crossings[::2], crossings[1::2]):
+                for x in range(int(left) + 1, int(right)):
+                    if x % 2 == 0 and y % 2 == 0:
+                        self.plot(layer, x, y)
+
+    def cell(self, row, col):
+        """(braille character or None, layer that colours it)."""
+        bits, top = 0, None
+        for name in ("grid", "ring", "fill", "edge"):
+            value = self.layers[name][row][col]
+            if value:
+                bits |= value
+                top = name
+        return (chr(0x2800 + bits), top) if bits else (None, None)
 
 
 def radar_canvas(values, dimmed=False):
-    """Radar of axis values (0..1 or None) as a Text. The dotted ring is the middle of the lobby (0.5)."""
+    """The radar as a Text: a braille drawing with the player's shape over the lobby ring, labels coloured by rank.
+
+    values are 0..1 lobby percentiles in profile.AXES order (None = unknown). The grey ring is the lobby middle.
+    """
     labels = [label for label, _ in profile.AXES]
-    pad = max(len(label) for label in labels) + 1
-    width, height = 2 * (RADAR_RX + pad) + 1, 2 * RADAR_RY + 3
-    cx, cy = width // 2, height // 2
-    canvas = [[(" ", "")] * width for _ in range(height)]
+    count, radius = len(labels), RADAR_RADIUS
+    rows = radius // 2 + 1  # braille rows above and below the centre line
+    pad = max(len(label) for label in labels) + 2
+    cols = radius + 1 + 2 * pad  # radius dots = radius/2 cells each side
+    cells_w = radius + 1
+    left = pad
+    dots = _Dots(cells_w, rows)
+    cx, cy = radius, rows * 2  # centre in dots (rows*4 dots tall, centre line in the middle)
 
     def point(index, fraction):
-        angle = math.pi / 2 - 2 * math.pi * index / len(labels)
-        return round(cx + RADAR_RX * fraction * math.cos(angle)), round(cy - RADAR_RY * fraction * math.sin(angle))
+        angle = math.pi / 2 - 2 * math.pi * index / count
+        return (cx + radius * fraction * math.cos(angle), cy - radius * fraction * math.sin(angle))
 
-    for step in range(72):  # reference ring
-        angle = 2 * math.pi * step / 72
-        x, y = round(cx + RADAR_RX * 0.5 * math.cos(angle)), round(cy - RADAR_RY * 0.5 * math.sin(angle))
-        canvas[y][x] = ("·", DIM)
-    canvas[cy][cx] = ("+", DIM)
-    style = "dim " + rgb_style(CYAN) if dimmed else "bold " + rgb_style(CYAN)
+    outer = [point(i, 1.0) for i in range(count)]
+    for a, b in zip(outer, outer[1:] + outer[:1]):
+        dots.line("grid", a, b)
+    for p in outer:
+        dots.line("grid", (cx, cy), p)
+    dots.circle("ring", cx, cy, radius * 0.5, dotted=True)
+
     known = [(i, v) for i, v in enumerate(values) if v is not None]
-    ring = [point(i, v) for i, v in known]
-    if len(ring) > 1:
-        for a, b in zip(ring, ring[1:] + ring[:1]):
-            _line(canvas, a, b, "•", style)
-    for p in ring:
-        canvas[p[1]][p[0]] = ("●", style)
+    shape = [point(i, max(v, 0.04)) for i, v in known]
+    if len(shape) > 2:
+        dots.fill("fill", shape)
+    if len(shape) > 1:
+        for a, b in zip(shape, shape[1:] + shape[:1]):
+            dots.line("edge", a, b)
+
+    colours = {"grid": GRID, "ring": RING, "fill": CYAN, "edge": CYAN}
+    fade = "dim " if dimmed else ""
+    out_rows = [[(" ", "")] * cells_w for _ in range(rows)]
+    for r in range(rows):
+        for c in range(cells_w):
+            char, layer = dots.cell(r, c)
+            if char:
+                style = fade + rgb_style(colours[layer])
+                out_rows[r][c] = (char, ("dim " if layer == "fill" and not dimmed else "") + style
+                                  if layer != "edge" else fade + "bold " + rgb_style(CYAN))
+    # vertex markers, coloured by rank
+    for (index, value), (x, y) in zip(known, shape):
+        r, c = min(int(y) // 4, rows - 1), min(int(x) // 2, cells_w - 1)
+        out_rows[r][c] = ("●", fade + "bold " + rgb_style(percentile_rgb(value)))
+
+    height = rows + 2  # a label row above the top vertex and below the bottom one
+    text_rows = [[(" ", "")] * cols for _ in range(height)]
+    for r in range(rows):
+        for c in range(cells_w):
+            text_rows[r + 1][left + c] = out_rows[r][c]
     for index, label in enumerate(labels):
-        x, y = point(index, 1.0)
-        x = x + 2 if x > cx else x - 2 - len(label) + 1 if x < cx else x - len(label) // 2
-        y = y - 1 if y < cy else y + 1 if y > cy else y
+        x, y = outer[index]
+        r, c = min(int(y) // 4, rows - 1) + 1, left + min(int(x) // 2, cells_w - 1)
+        if abs(x - cx) < 1:  # top or bottom: centred above / below the vertex
+            r += -1 if y < cy else 1
+            start = c - len(label) // 2
+        elif x > cx:
+            start = c + 2
+        else:
+            start = c - 1 - len(label)
+        value = values[index]
+        style = fade + (rgb_style(percentile_rgb(value)) + " bold" if value is not None else "dim")
         for offset, char in enumerate(label):
-            if 0 <= x + offset < width:
-                canvas[y][x + offset] = (char, "" if values[index] is not None else DIM)
+            if 0 <= start + offset < cols:
+                text_rows[r][start + offset] = (char, style)
     text = Text()
-    for row in canvas:
-        for char, style_ in row:
-            text.append(char, style=style_ or None)
+    for row in text_rows:
+        for char, style in row:
+            text.append(char, style=style or None)
         text.append("\n")
     return text
 
@@ -512,8 +595,13 @@ def profile_view(rows, selected):
     for label, _ in profile.AXES:
         value = axes[label]
         text.append(f"{label:<12}")
-        text.append(bar(value if value is not None else 0, 10) if value is not None else "··········", style=rgb_style(CYAN))
-        text.append(f" {_fmt(None if value is None else value * 100, '3.0f', '  —')}  {detail[label]}\n")
+        if value is None:
+            text.append("··········   —  ", style=DIM)
+        else:
+            colour = rgb_style(percentile_rgb(value))
+            text.append(bar(value, 10), style=colour)
+            text.append(f" {value * 100:3.0f}  ", style="bold " + colour)
+        text.append(detail[label] + "\n", style=DIM)
     text.append(f"\nACS {_fmt(mine['acs'], '.0f')} · K/D {_fmt(mine['kd'], '.2f')} · "
                 f"{_fmt(mine['kills'], 'd')}/{_fmt(mine['deaths'], 'd')}/{_fmt(mine['assists'], 'd')}")
     return text

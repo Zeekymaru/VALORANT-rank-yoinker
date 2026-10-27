@@ -225,7 +225,8 @@ def test_profile_view_explains_missing_data():
 
 def test_radar_canvas_marks_each_known_axis_and_the_ring():
     text = tui_views.radar_canvas([1.0, 0.5, 0.2, None, 0.8, 0.5]).plain
-    assert text.count("●") == 5 and "·" in text and "+" in text
+    assert text.count("●") == 5  # one marker per known axis
+    assert any(0x2801 <= ord(ch) <= 0x28FF for ch in text)  # the drawing is braille
     assert all(label in text for label, _ in tui_views.profile.AXES)
 
 
@@ -233,3 +234,15 @@ def test_card_shows_a_performance_line_when_stats_exist():
     lines = tui_views.recent_block(_with_stats(), NAMES, "").plain.splitlines()
     assert "ACS 200 · ADR 150 · K/D 1.11 · KAST 73%" in lines
     assert not any(line.startswith("ACS") for line in tui_views.recent_block(summary(), NAMES, "").plain.splitlines())
+
+
+def test_percentile_colours_run_from_red_to_green():
+    low, high = tui_views.percentile_rgb(0.0), tui_views.percentile_rgb(1.0)
+    assert low[0] > low[1] and high[1] > high[0]
+
+
+def test_radar_canvas_dims_for_small_samples_and_survives_few_points():
+    styles = {str(span.style) for span in tui_views.radar_canvas([0.9, 0.1, 0.5, 0.5, 0.5, 0.5], dimmed=True).spans}
+    assert styles and all("dim" in s for s in styles if "rgb" in s)
+    assert tui_views.radar_canvas([None] * 6).plain.count("●") == 0
+    assert tui_views.radar_canvas([0.7, None, None, None, None, None]).plain.count("●") == 1
