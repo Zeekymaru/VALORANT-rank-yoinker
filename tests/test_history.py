@@ -85,6 +85,23 @@ def test_normal_aggregation(standard_http, roles, tmp_path):
     # rounds of the player's own team: match-1 atk 1/2 def 1/1, match-2 atk 0/1 def 0/1, match-3 def 2/3
     assert summary["attack"] == {"won": 1, "rounds": 3}
     assert summary["defense"] == {"won": 3, "rounds": 5}
+    assert [(m["id"], m["agent"], m["won"], m["attack"], m["defense"]) for m in summary["matches"]] == [
+        ("match-1", "agent-jett", True, [1, 2], [1, 1]),
+        ("match-2", "agent-jett", False, [0, 1], [0, 1]),
+        ("match-3", "agent-sage", True, [0, 0], [2, 3]),
+    ]
+    assert [m["map"] for m in summary["matches"]] == ["/game/maps/ascent/ascent", "/game/maps/triad/triad",
+                                                      "/game/maps/ascent/ascent"]
+
+
+def test_rr_earned_is_carried_per_match(roles, tmp_path):
+    entries = {"Matches": [{"MatchID": "match-1", "RankedRatingEarned": 21},
+                           {"MatchID": "match-2", "RankedRatingEarned": -18},
+                           {"MatchID": "match-3"}]}  # no RR field: stays None
+    http = FakeHttp(routes_for(entries, {"match-1": "match-1.json", "match-2": "match-2.json",
+                                         "match-3": "match-3.json"}))
+    summary = run_summary(http, roles, tmp_path)
+    assert [m["rr"] for m in summary["matches"]] == [21, -18, None]
 
 
 def test_win_rate_and_sample_size(standard_http, roles, tmp_path):

@@ -70,6 +70,10 @@ HISTORY_MATCH_ID_FIELD = "MatchID"
 # in the same path style as the lobby's MapID (e.g. /Game/Maps/Triad/Triad).
 # If it is missing the map record is skipped and no extra matches are fetched.
 HISTORY_MAP_FIELD = "MapID"
+# vRY 2.94 reads RankedRatingEarned from competitiveupdates for the user's own latest
+# match (src/player_stats.py). TODO(verify): it is present on other players' entries
+# too; it feeds the RR trend graph, and a missing value just leaves that graph empty.
+HISTORY_RR_FIELD = "RankedRatingEarned"
 # Seen in 81 cached live match files (2026-10-27): matchInfo.mapId, and per round
 # winningTeam plus winningTeamRole ("Attacker" / "Defender").
 DETAILS_INFO_FIELD = "matchInfo"
@@ -189,7 +193,8 @@ def match_ids_for(puuid, pd_url, headers, *, max_matches=DEFAULT_MAX_MATCHES, ht
 
 
 def match_entries_for(puuid, pd_url, headers, *, depth=DEFAULT_MAX_MATCHES, http_get=None):
-    """[{"id": match id, "map": lowercase map id or None}, ...], newest first, at most `depth`.
+    """[{"id": match id, "map": lowercase map id or None, "rr": RR earned or None}, ...],
+    newest first, at most `depth`.
 
     One request. None if unavailable (401/403/404 or any failure), [] if empty.
     """
@@ -208,8 +213,10 @@ def match_entries_for(puuid, pd_url, headers, *, depth=DEFAULT_MAX_MATCHES, http
         if not isinstance(entry, dict) or not isinstance(entry.get(HISTORY_MATCH_ID_FIELD), str):
             continue
         map_id = entry.get(HISTORY_MAP_FIELD)
+        rr = entry.get(HISTORY_RR_FIELD)
         entries.append({"id": entry[HISTORY_MATCH_ID_FIELD],
-                        "map": map_id.lower() if isinstance(map_id, str) and map_id else None})
+                        "map": map_id.lower() if isinstance(map_id, str) and map_id else None,
+                        "rr": rr if isinstance(rr, (int, float)) and not isinstance(rr, bool) else None})
     return entries[:depth]
 
 
@@ -299,6 +306,10 @@ def _aggregate(results, agent_roles):
         "roles": dict(roles),
         "attack": side_total(ROLE_ATTACKER),
         "defense": side_total(ROLE_DEFENDER),
+        # one entry per sampled match, newest first (feeds the TUI's form strip, detail and RR trend)
+        "matches": [{"id": r.get("id"), "agent": r["agent"], "won": r["won"], "map": r["map"],
+                     "attack": list(r["sides"][ROLE_ATTACKER]), "defense": list(r["sides"][ROLE_DEFENDER]),
+                     "rr": r.get("rr")} for r in results],
     }
 
 
@@ -335,8 +346,12 @@ def _summarise(puuid, pd_url, headers, agent_roles, max_matches, ttl, cache_dir,
     elif not entries:
         summary = _unavailable(REASON_NO_GAMES)
     else:
-        recent = [result_for(entry["id"]) for entry in entries[:max_matches]]
-        summary = _aggregate([r for r in recent if r is not None], agent_roles or {})
+        recent = []
+        for entry in entries[:max_matches]:
+            result = result_for(entry["id"])
+            if result is not None:
+                recent.append({**result, "id": entry["id"], "rr": entry["rr"]})
+        summary = _aggregate(recent, agent_roles or {})
         if summary["available"] and map_key and any(entry["map"] for entry in entries):
             on_map = [entry for entry in entries if entry["map"] == map_key][:map_matches]
             results = [result_for(entry["id"]) for entry in on_map]
