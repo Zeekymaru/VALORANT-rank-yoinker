@@ -321,3 +321,20 @@ def test_agent_missing_from_role_table_counts_as_unknown(tmp_path):
                                 "match-3": "match-3.json"}))
     summary = run_summary(http, {"agent-jett": "Duelist"}, tmp_path)
     assert summary["roles"] == {"Duelist": 2, "Unknown": 1}
+
+
+def test_player_results_carry_performance_counts_into_the_summary():
+    a = "aaaa0000-0000-0000-0000-000000000001"
+    details = fixture("match-stats.json")
+    result = history._player_result(a, details)
+    assert result["stats"]["kills"] == 1 and result["stats"]["first_deaths"] == 2
+    summary = history._aggregate([{**result, "id": "stats-1", "rr": None}], {})
+    assert summary["stats"]["games"] == 1 and summary["stats"]["rounds"] == 3
+    assert summary["matches"][0]["stats"] == result["stats"]
+
+
+def test_matches_without_round_data_still_count_without_stats():
+    result = history._player_result(PUUID, fixture("match-1.json"))
+    assert result is not None and result["stats"] is None  # older fixtures have no per-round data
+    summary = history._aggregate([{**result, "id": "match-1", "rr": None}], {})
+    assert summary["available"] and summary["stats"] is None

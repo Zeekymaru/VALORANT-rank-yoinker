@@ -19,6 +19,8 @@ from collections import Counter
 
 import requests
 
+import match_stats
+
 log = logging.getLogger(__name__)
 _log_sink = None
 
@@ -256,7 +258,9 @@ def _player_result(puuid, details):
         return None
     info = details.get(DETAILS_INFO_FIELD)
     map_id = info.get(INFO_MAP_FIELD) if isinstance(info, dict) else None
+    team_of = {str(p.get(PLAYER_SUBJECT_FIELD, "")).lower(): p.get(PLAYER_TEAM_FIELD) for p in players}
     return {
+        "stats": match_stats.player_match_stats(puuid, details, team_of),
         "agent": str(me[PLAYER_AGENT_FIELD]).lower(),
         "won": team[TEAM_WON_FIELD],
         "map": map_id.lower() if isinstance(map_id, str) and map_id else None,
@@ -309,7 +313,8 @@ def _aggregate(results, agent_roles):
         # one entry per sampled match, newest first (feeds the TUI's form strip, detail and RR trend)
         "matches": [{"id": r.get("id"), "agent": r["agent"], "won": r["won"], "map": r["map"],
                      "attack": list(r["sides"][ROLE_ATTACKER]), "defense": list(r["sides"][ROLE_DEFENDER]),
-                     "rr": r.get("rr")} for r in results],
+                     "rr": r.get("rr"), "stats": r.get("stats")} for r in results],
+        "stats": match_stats.total([r.get("stats") for r in results]),
     }
 
 
