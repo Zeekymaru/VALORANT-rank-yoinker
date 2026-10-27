@@ -97,6 +97,8 @@ show `no recent comp games`.
 * Turn it off with `"lobby_history": false` in the `table` section of `config.json`.
 * Riot's API policy (see below) applies here too. Whether other players' match history counts as data the client hides
   is not verified.
+* The **Party** column (same-colored squares mark players queued together) is switched on in this fork; set
+  `"party": false` in the `table` section of `config.json` to hide it again. Not verified live yet.
 * Tests: `pip install -r requirements-dev.txt`, then `pytest`.
 
 ## What about that Tweet?

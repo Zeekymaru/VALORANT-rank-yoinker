@@ -205,7 +205,8 @@ DEFAULT_CONFIG = {
         "winrate": True,
         "kd": False,
         "level": True,
-        "lobby_history": True
+        "lobby_history": True,
+        "party": True
     },
     "flags": {
         "last_played": True,
