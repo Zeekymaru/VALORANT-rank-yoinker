@@ -37,9 +37,6 @@ HISTORY_PATH = "/match-history/v1/history/{puuid}"
 HISTORY_QUEUE = "competitive"
 # TODO(verify): path, and that it lives on the pd host.
 MATCH_DETAILS_PATH = "/match-details/v1/matches/{match_id}"
-# valorant-api.com is the same third-party host main.py already uses for skins.
-# TODO(verify): URL and the isPlayableCharacter parameter.
-AGENTS_URL = "https://valorant-api.com/v1/agents"
 
 # Response field names.
 # TODO(verify): "History" list in the match-history response.
@@ -58,13 +55,44 @@ PLAYER_AGENT_FIELD = "characterId"
 DETAILS_TEAMS_FIELD = "teams"
 TEAM_ID_FIELD = "teamId"
 TEAM_WON_FIELD = "won"
-# TODO(verify): valorant-api.com agent fields: "data", "uuid", and the role
-# name at role.displayName.
-AGENTS_DATA_FIELD = "data"
-AGENT_UUID_FIELD = "uuid"
-AGENT_ROLE_FIELD = "role"
-AGENT_ROLE_NAME_FIELD = "displayName"
 
+# Agent ID (lowercase) -> role. Hardcoded on purpose: roles of existing agents
+# don't change and new agents arrive rarely. Generated 2026-10-27 from
+# valorant-api.com (/v1/agents?isPlayableCharacter=true). An agent missing from
+# this table counts as UNKNOWN_ROLE; add a line when a new agent ships.
+# The IDs are only useful if they match the match-details characterId; that is
+# covered by the TODO(verify) on PLAYER_AGENT_FIELD above.
+AGENT_ROLES = {
+    "41fb69c1-4189-7b37-f117-bcaf1e96f1bf": "Controller",  # Astra
+    "5f8d3a7f-467b-97f3-062c-13acf203c006": "Initiator",  # Breach
+    "9f0d8ba9-4140-b941-57d3-a7ad57c6b417": "Controller",  # Brimstone
+    "22697a3d-45bf-8dd7-4fec-84a9e28c69d7": "Sentinel",  # Chamber
+    "1dbf2edd-4729-0984-3115-daa5eed44993": "Controller",  # Clove
+    "117ed9e3-49f3-6512-3ccf-0cada7e3823b": "Sentinel",  # Cypher
+    "cc8b64c8-4b25-4ff9-6e7f-37b4da43d235": "Sentinel",  # Deadlock
+    "dade69b4-4f5a-8528-247b-219e5a1facd6": "Initiator",  # Fade
+    "e370fa57-4757-3604-3648-499e1f642d3f": "Initiator",  # Gekko
+    "95b78ed7-4637-86d9-7e41-71ba8c293152": "Controller",  # Harbor
+    "0e38b510-41a8-5780-5e8f-568b2a4f2d6c": "Duelist",  # Iso
+    "add6443a-41bd-e414-f6ad-e58d267f4e95": "Duelist",  # Jett
+    "601dbbe7-43ce-be57-2a40-4abd24953621": "Initiator",  # KAY/O
+    "1e58de9c-4950-5125-93e9-a0aee9f98746": "Sentinel",  # Killjoy
+    "7c8a4701-4de6-9355-b254-e09bc2a34b72": "Controller",  # Miks
+    "bb2a4828-46eb-8cd1-e765-15848195d751": "Duelist",  # Neon
+    "8e253930-4c05-31dd-1b6c-968525494517": "Controller",  # Omen
+    "eb93336a-449b-9c1b-0a54-a891f7921d69": "Duelist",  # Phoenix
+    "f94c3b30-42be-e959-889c-5aa313dba261": "Duelist",  # Raze
+    "a3bfb853-43b2-7238-a4f1-ad90e9e46bcc": "Duelist",  # Reyna
+    "569fdd95-4d10-43ab-ca70-79becc718b46": "Sentinel",  # Sage
+    "6f2a04ca-43e0-be17-7f36-b3908627744d": "Initiator",  # Skye
+    "320b2a48-4d9b-a075-30f1-1f93a9b638fa": "Initiator",  # Sova
+    "b444168c-4e35-8076-db47-ef9bf368f384": "Initiator",  # Tejo
+    "92eeef5d-43b5-1d4a-8d03-b3927a09034b": "Sentinel",  # Veto
+    "707eab51-4836-f488-046a-cda6bf494859": "Controller",  # Viper
+    "efba5359-4016-a1e5-7626-b1ae76895940": "Sentinel",  # Vyse
+    "df1cb487-4902-002e-5c17-d28e83e78588": "Duelist",  # Waylay
+    "7f94d92c-4234-0a36-9646-3a87eb8b5c89": "Duelist",  # Yoru
+}
 UNKNOWN_ROLE = "Unknown"
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -158,27 +186,6 @@ def match_details(match_id, pd_url, headers, *, cache_dir=None, http_get=None):
         return None
     _write_json(path, data)
     return data
-
-
-def build_role_map(agents):
-    """Map lowercase agent ID -> role name from valorant-api.com agent entries."""
-    roles = {}
-    for agent in agents or []:
-        if not isinstance(agent, dict):
-            continue
-        role = agent.get(AGENT_ROLE_FIELD)
-        uuid = agent.get(AGENT_UUID_FIELD)
-        if isinstance(role, dict) and uuid and role.get(AGENT_ROLE_NAME_FIELD):
-            roles[str(uuid).lower()] = role[AGENT_ROLE_NAME_FIELD]
-    return roles
-
-
-def load_role_map(http_get=None):
-    """Download agent data once and build the role map; {} on any failure."""
-    data = _get_json(AGENTS_URL, None, params={"isPlayableCharacter": "true"}, http_get=http_get)
-    if not isinstance(data, dict):
-        return {}
-    return build_role_map(data.get(AGENTS_DATA_FIELD))
 
 
 def _player_result(puuid, details):

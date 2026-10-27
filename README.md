@@ -107,8 +107,9 @@ and role distribution. Players whose history is private or unavailable show
   untested best guesses; each one is marked `# TODO(verify)` in `history.py`.
   Expect it to need fixes before it works for real.
 * Uses the **local client's tokens** (the same lockfile / entitlements headers
-  as the rank lookup). Nothing is sent anywhere except Riot's own endpoints and
-  valorant-api.com (for agent roles).
+  as the rank lookup). Nothing is sent anywhere except Riot's own endpoints.
+  Agent roles come from a table in `history.py`, so a new agent shows as
+  `Unknown` until it is added there.
 * **Respects private profiles.** A 401, 403 or 404 means "unavailable" and is
   not retried or worked around.
 * Request volume is bounded: at most 5 matches per player, finished matches are

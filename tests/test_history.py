@@ -60,7 +60,7 @@ def routes_for(history_payload, match_names):
 
 @pytest.fixture
 def roles():
-    return history.build_role_map(fixture("agents.json")["data"])
+    return {"agent-jett": "Duelist", "agent-sage": "Sentinel", "agent-omen": "Controller"}
 
 
 @pytest.fixture
@@ -178,5 +178,14 @@ def test_network_error_never_raises(roles, tmp_path):
     assert run_summary(boom, roles, tmp_path)["available"] is False
 
 
-def test_build_role_map_lowercases_and_skips_missing_roles(roles):
-    assert roles == {"agent-jett": "Duelist", "agent-sage": "Sentinel", "agent-omen": "Controller"}
+def test_agent_roles_table_is_well_formed():
+    assert set(history.AGENT_ROLES.values()) == {"Duelist", "Initiator", "Controller", "Sentinel"}
+    assert all(agent_id == agent_id.lower() for agent_id in history.AGENT_ROLES)
+
+
+def test_agent_missing_from_role_table_counts_as_unknown(tmp_path):
+    http = FakeHttp(routes_for(fixture("history_ok.json"),
+                               {"match-1": "match-1.json", "match-2": "match-2.json",
+                                "match-3": "match-3.json"}))
+    summary = run_summary(http, {"agent-jett": "Duelist"}, tmp_path)
+    assert summary["roles"] == {"Duelist": 2, "Unknown": 1}

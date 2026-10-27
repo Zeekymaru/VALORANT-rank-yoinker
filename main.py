@@ -509,7 +509,6 @@ try:
     log(f"gotten agent dict: {agent_dict}")
     seasonID = get_latest_season_id(content)
     log(f"gotten season id: {seasonID}")
-    agent_roles = history.load_role_map()
     lastGameState = ""
 
     while True:
@@ -624,7 +623,7 @@ try:
                                             leaderboard,
                                             level,
                                             *history.format_columns(history.summarise(
-                                                player["Subject"], pd_url, get_headers(), agent_roles), agent_dict)
+                                                player["Subject"], pd_url, get_headers(), history.AGENT_ROLES), agent_dict)
                                             ])
                         bar()
             elif game_state == "PREGAME":
@@ -711,7 +710,7 @@ try:
                                             leaderboard,
                                             level,
                                             *history.format_columns(history.summarise(
-                                                player["Subject"], pd_url, get_headers(), agent_roles), agent_dict)
+                                                player["Subject"], pd_url, get_headers(), history.AGENT_ROLES), agent_dict)
                                             ])
                         bar()
             if game_state == "MENUS":
