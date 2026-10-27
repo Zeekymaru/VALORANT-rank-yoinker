@@ -196,6 +196,8 @@ def recent_block(summary, agent_names, map_name="", axes=None):
     if axes:
         text.append("\nProfile ", style=DIM)
         text.append_text(fingerprint(axes, _few_games(summary), spaced=True))
+        text.append("  ")
+        text.append_text(archetype_text(profile.archetype(axes, _games(summary)), full=False))
     record = summary.get("map")
     if map_name and record is not None:
         if record["games"]:
@@ -588,6 +590,9 @@ def profile_view(rows, selected):
     text.append("ring = lobby middle · outside it = above most of the lobby\n", style=DIM)
     if dimmed:
         text.append("Few games: treat this shape as a rough guess.\n", style=DIM)
+    text.append("Style  ")
+    text.append_text(archetype_text(profile.archetype(axes, mine["games"])))
+    text.append("   (a guess from the axes below, relative to this lobby)\n", style=DIM)
     text.append_text(radar_canvas([axes[label] for label, _ in profile.AXES], dimmed))
     detail = {
         "Aim": f"ADR {_fmt(mine['adr'], '.0f')} · HS {_fmt(None if mine['hs'] is None else mine['hs'] * 100, '.0f')}%",
@@ -635,6 +640,27 @@ def _few_games(summary):
     return isinstance(stats, dict) and (stats.get("games") or 0) < profile.DIM_BELOW_GAMES
 
 
+def _games(summary):
+    stats = (summary or {}).get("stats") if isinstance(summary, dict) else None
+    return stats.get("games") if isinstance(stats, dict) else None
+
+
+def archetype_text(arch, full=True):
+    """'Support · steady · also Fragger' (full) or just the style; a '?' marks a rough guess from few games."""
+    if not arch:
+        return Text("")
+    muted = arch["rough"] or arch["label"] == profile.BALANCED
+    text = Text(arch["label"], style=DIM if muted else "bold " + rgb_style(CYAN))
+    if full:
+        if arch["trait"]:
+            text.append(f" · {arch['trait']}", style=DIM)
+        if arch["also"]:
+            text.append(f" · also {arch['also']}", style=DIM)
+    if arch["rough"]:
+        text.append(" ?", style=DIM)
+    return text
+
+
 def fingerprint(axes, dimmed=False, spaced=False):
     """Six blocks, one per radar axis, as tall as the player's rank in the lobby and coloured red -> green."""
     text = Text()
@@ -654,8 +680,8 @@ def fingerprint(axes, dimmed=False, spaced=False):
 
 def _heat_cell(value):
     if value is None:
-        return Text("  —  ", style=DIM, justify="center")
-    return Text(f" {value * 100:3.0f} ", style=f"bold black on {rgb_style(percentile_rgb(value))}", justify="center")
+        return Text(" — ", style=DIM, justify="center")
+    return Text(f"{value * 100:3.0f} ", style=f"bold black on {rgb_style(percentile_rgb(value))}", justify="center")
 
 
 def _average(axes_list):
@@ -674,31 +700,33 @@ def heat_view(rows, selected):
         loaded = any(r.history_state == "done" for r in rows)
         return Text("Per-match performance isn't available for anyone yet; it fills in as history loads or "
                     "after the next refresh." if loaded else "Loading match history…", style=DIM)
-    table = Table(box=None, pad_edge=False, header_style="bold", show_edge=False)
+    table = Table(box=None, pad_edge=False, header_style="bold", show_edge=False, padding=(0, 1, 0, 0))
     table.add_column("Player", no_wrap=True)
     for label, _ in profile.AXES:
         table.add_column(HEAT_HEADERS[label], justify="center", no_wrap=True)
-    table.add_column("Games", justify="right", style=DIM)
+    table.add_column("Style", no_wrap=True)
     for ally in (True, False):
         group = [r for r in rows if r.ally == ally]
         if not group:
             continue
         for row in group:
             name = name_text(row)
+            name.truncate(12, overflow="ellipsis", pad=True)
             if row.puuid == selected:
                 name.stylize("bold")
             lead = Text("▶ " if row.puuid == selected else "  ")
             mine = axes.get(row.puuid)
             games = (profiles.get(row.puuid) or {}).get("games")
             table.add_row(lead + name, *[_heat_cell(mine.get(label) if mine else None) for label, _ in profile.AXES],
-                          str(games) if games else "")
+                          archetype_text(profile.archetype(mine, games), full=False))
         avg = _average([axes.get(r.puuid) for r in group])
         table.add_row(Text("  " + ("Your team avg" if ally else "Enemy avg"), style="italic dim"),
                       *[_heat_cell(avg[label]) for label, _ in profile.AXES], "")
         table.add_row(*[""] * (len(profile.AXES) + 2))
     head = Text(f"Every player against every axis · percentile among the {sum(1 for p in profiles.values() if p)} "
                 "players with data\n", style="bold")
-    head.append("red = low in this lobby · green = high · 50 = lobby middle\n\n", style=DIM)
+    head.append("red = low in this lobby · green = high · 50 = lobby middle · Style is a guess (? = few games)\n\n",
+                style=DIM)
     return Group(head, table)
 
 

@@ -135,7 +135,15 @@ the rest, so with fewer than 3 games it is drawn dimmed. Cards also get an `ACS 
 * **Fingerprint:** six blocks, one per radar axis in the order Aim, Entry, Survival, Utility, Objective, Consistency
   (the `AESUOC` column in the list, a `Profile` line on the cards). A block is as tall as the player's rank in the
   lobby and coloured red (low) to green (high); a dot means no data. It is recomputed whenever anyone's history arrives.
-* **Heatmap (7):** every player against every axis as coloured percentiles, plus a team-average row for each side.
+* **Heatmap (7):** every player against every axis as coloured percentiles, plus a team-average row for each side and
+  each player's style.
+* **Style (archetype):** a guess from the axes, relative to this lobby, shown on the cards, in the Profile view
+  and in the heatmap. A style is a weighted blend of axes: **Entry fragger** (entry + aim), **Fragger** (aim + survival,
+  not entry), **Support** (utility + survival + objective), **Anchor** (survival, not entry) and **Objective player**
+  (plants/defuses + utility); the best blend at 0.68 or above wins, otherwise **Balanced**. Consistency isn't a style but
+  a trait: *steady* (75th percentile or above) or *streaky* (25th or below). A runner-up style is shown as "also ...",
+  and a `?` means fewer than 3 games stand behind it. It is a rough label, not a Riot stat, and the rules are in
+  `player_profile.py` (`STYLES`).
 * **Scatter (8):** one point per player, your team cyan, the enemy red, the selected player yellow, with dashed
   lobby-average lines. `s` (or the button) cycles the pairing: ADR vs first-blood rate, KAST vs ADR, HS vs ADR,
   ACS vs K/D, casts vs KAST. It needs `textual-plotext` (`requirements-tui-charts.txt`); without it the same pairing

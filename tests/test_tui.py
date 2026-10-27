@@ -396,3 +396,15 @@ def test_the_app_works_without_textual_plotext(monkeypatch):
             assert "Net RR over the sampled games" in text_of(app.query_one("#g-rr", Static))
 
     asyncio.run(main())
+
+
+def test_profile_graph_names_the_players_style():
+    async def scenario(app, pilot):
+        await pilot.press("6")
+        await pilot.pause(0.2)
+        assert "Style  " in text_of(app.query_one("#g-profile", Static))
+        await pilot.press("7")
+        await pilot.pause(0.2)
+        assert "Style" in text_of(app.query_one("#g-heat", Static))
+
+    run(scenario)

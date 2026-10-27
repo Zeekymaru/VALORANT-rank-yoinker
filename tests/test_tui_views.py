@@ -307,3 +307,23 @@ def test_scatter_caption_and_fallback():
     assert "Not enough players" in tui_views.scatter_caption(0, points[:1]).plain
     fallback = tui_views.scatter_fallback(0, points).plain
     assert "requirements-tui-charts.txt" in fallback and "Mate" in fallback
+
+
+def test_archetype_text_shows_style_trait_runner_up_and_roughness():
+    full = {"label": "Support", "score": 0.8, "also": "Fragger", "trait": "steady", "rough": False}
+    assert tui_views.archetype_text(full).plain == "Support · steady · also Fragger"
+    assert tui_views.archetype_text(full, full=False).plain == "Support"
+    assert tui_views.archetype_text(dict(full, rough=True)).plain.endswith(" ?")
+    assert tui_views.archetype_text(None).plain == ""
+
+
+def test_archetype_shows_on_the_card_profile_view_and_heatmap():
+    rows = _lobby()
+    axes = tui_views.lobby_axes(rows)
+    card = tui_views.card_text(rows[1], NAMES, "", axes["a2"]).plain
+    profile_line = next(line for line in card.splitlines() if line.startswith("Profile "))
+    assert len(profile_line) > len("Profile ") + 11  # blocks plus a style name
+    view = tui_views.profile_view(rows, "a2").plain
+    assert "Style  " in view and "relative to this lobby" in view
+    heat = plain(tui_views.heat_view(rows, "a2"))
+    assert "Style" in heat.splitlines()[3] or any("Style" in line for line in heat.splitlines()[:6])

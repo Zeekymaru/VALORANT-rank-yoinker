@@ -92,3 +92,55 @@ def radar_axes(profiles):
             axes[label] = mean(scores) if scores else None
         out[key] = axes
     return out
+
+
+# --- archetypes ---------------------------------------------------------------------------
+# A heuristic label from the lobby-relative axes, not a Riot stat. A *style* is a weighted blend of axes (a negative
+# weight means "low on that axis", so the axis is flipped); the best blend at or above ARCHETYPE_MIN wins. How steady
+# the player is between games is a separate *trait*, because one axis on its own would outrank every style.
+ARCHETYPE_MIN = 0.68
+STYLES = (
+    ("Entry fragger", (("Entry", 3), ("Aim", 2))),
+    ("Fragger", (("Aim", 3), ("Survival", 2), ("Entry", -1))),
+    ("Support", (("Utility", 3), ("Survival", 1), ("Objective", 1))),
+    ("Anchor", (("Survival", 3), ("Entry", -2), ("Objective", 1))),
+    ("Objective player", (("Objective", 3), ("Utility", 1))),
+)
+BALANCED = "Balanced"
+TRAIT_STEADY, TRAIT_STREAKY = "steady", "streaky"
+TRAIT_HIGH, TRAIT_LOW = 0.75, 0.25  # consistency percentiles that earn a trait
+
+
+def _blend(axes, weights):
+    """Weighted mean (0..1) of the axes in weights, or None when under half the weight has data."""
+    total = used = 0.0
+    for axis, weight in weights:
+        value = axes.get(axis)
+        if value is None:
+            continue
+        total += abs(weight) * (value if weight > 0 else 1 - value)
+        used += abs(weight)
+    return total / used if used >= sum(abs(w) for _, w in weights) / 2 else None
+
+
+def archetype(axes, games=None):
+    """{"label", "score", "also", "trait", "rough"} for one player's axes, or None without data.
+
+    label is the best-fitting style ("Balanced" when none clears the threshold), also the runner-up style if it
+    clears it too, trait "steady" / "streaky" from the consistency axis (or None), and rough is True when fewer
+    than DIM_BELOW_GAMES games stand behind the numbers.
+    """
+    if not axes or all(v is None for v in axes.values()):
+        return None
+    scored = sorted(((score, label) for label, weights in STYLES
+                     if (score := _blend(axes, weights)) is not None), reverse=True)
+    passing = [(s, l) for s, l in scored if s >= ARCHETYPE_MIN]
+    consistency = axes.get("Consistency")
+    trait = (TRAIT_STEADY if consistency >= TRAIT_HIGH else TRAIT_STREAKY if consistency <= TRAIT_LOW else None) \
+        if consistency is not None else None
+    rough = games is not None and games < DIM_BELOW_GAMES
+    if not passing:
+        return {"label": BALANCED, "score": scored[0][0] if scored else None, "also": None, "trait": trait,
+                "rough": rough}
+    return {"label": passing[0][1], "score": passing[0][0], "also": passing[1][1] if len(passing) > 1 else None,
+            "trait": trait, "rough": rough}
