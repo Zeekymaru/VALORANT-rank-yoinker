@@ -91,9 +91,16 @@ def test_win_rate_and_sample_size(standard_http, roles, tmp_path):
 
 def test_cell_styling_hooks(standard_http, roles, tmp_path):
     summary = run_summary(standard_http, roles, tmp_path)
-    cell = history.format_cell(summary, {}, wr_color=lambda pct: f"<{pct}>", dim=lambda text: f"[{text}]")
-    assert cell.splitlines() == ["<67>% 2/3", "Unknown ×2 · Unknown", "[Duel2 Sent1]"]
+    cell = history.format_cell(summary, {}, wr_color=lambda pct, text: f"<{pct}:{text}>", dim=lambda text: f"[{text}]")
+    assert cell.splitlines() == ["<67:67% 2/3>", "Unknown ×2 · Unknown", "[Duel2 Sent1]"]
     assert history.format_cell(history._unavailable(), {}, dim=lambda text: f"[{text}]") == "[history unavailable]"
+
+
+def test_win_rate_color_is_always_readable_on_a_dark_background():
+    assert history.win_rate_rgb(-5) == history.win_rate_rgb(0) == (235, 80, 80)
+    assert history.win_rate_rgb(50) == (235, 205, 70)
+    assert history.win_rate_rgb(100) == history.win_rate_rgb(150) == (90, 225, 110)
+    assert all(max(history.win_rate_rgb(p)) >= 200 for p in range(0, 101))
 
 
 def test_ties_go_to_the_most_recent_agent(roles, tmp_path):

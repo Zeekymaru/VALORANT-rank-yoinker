@@ -291,6 +291,16 @@ def summarise(puuid, pd_url, headers, agent_roles, *, max_matches=DEFAULT_MAX_MA
         return _unavailable()
 
 
+def win_rate_rgb(percent):
+    """(r, g, b) for a win rate: red at 0, yellow at 50, green at 100; never too dark to read."""
+    stops = [(0, (235, 80, 80)), (50, (235, 205, 70)), (100, (90, 225, 110))]
+    percent = max(0, min(100, percent))
+    for (low, start), (high, end) in zip(stops, stops[1:]):
+        if percent <= high:
+            ratio = (percent - low) / (high - low)
+            return tuple(round(a + (b - a) * ratio) for a, b in zip(start, end))
+
+
 def _agent_label(name, games):
     return name if games == 1 else f"{name} ×{games}"
 
@@ -303,15 +313,17 @@ def format_cell(summary, agent_names, wr_color=None, dim=None):
         Init2 Ctrl1 Duel1 Sent1
 
     agent_names maps lowercase agent ID -> display name (main.py's agent_dict).
-    wr_color(percent) -> str and dim(text) -> str are optional styling hooks
-    (main.py passes its colour helpers); plain text is used without them.
+    wr_color(percent, text) -> str colors the whole "60% 3/5" text, and
+    dim(text) -> str mutes the secondary lines. Both are optional styling
+    hooks (main.py passes colour helpers); plain text is used without them.
     """
-    wr_color = wr_color or str
+    wr_color = wr_color or (lambda percent, text: text)
     dim = dim or str
     if not summary.get("available"):
         return dim(NO_GAMES_TEXT if summary.get("reason") == REASON_NO_GAMES else UNAVAILABLE_TEXT)
     games, wins = summary["games"], summary["wins"]
-    rate = f"{wr_color(int(100 * wins / games + 0.5))}% {wins}/{games}"
+    percent = int(100 * wins / games + 0.5)
+    rate = wr_color(percent, f"{percent}% {wins}/{games}")
     agents = " · ".join(_agent_label(agent_names.get(a["agent_id"], "Unknown"), a["games"])
                         for a in summary["top_agents"])
     roles = " ".join(f"{ROLE_SHORT.get(role, role)}{n}" for role, n in

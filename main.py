@@ -128,12 +128,29 @@ try:
         summary = history.summarise(
             player_subject, Requests.pd_url, Requests.get_headers(), history.AGENT_ROLES
         )
-        return history.format_cell(
+        cell = history.format_cell(
             summary,
             agent_dict,
-            wr_color=colors.get_wr_gradient,
+            wr_color=lambda percent, text: color(text, fore=history.win_rate_rgb(percent)),
             dim=lambda text: color(text, fore=(130, 130, 130)),
         )
+        return cell + "\n "  # blank line so stacked rows don't run together
+
+    def log_party_diagnostics(player_puuids, presence_list):
+        # Counts only, no IDs: does the local client expose the lobby players' presence at all?
+        try:
+            seen = [p for p in presence_list if p["puuid"] in player_puuids]
+            sizes = []
+            for p in seen:
+                decoded = presences.decode_presence(p["private"])
+                if decoded["isValid"]:
+                    sizes.append(decoded.get("partyPresenceData", decoded).get("partySize"))
+            log(
+                f"party diagnostics: {len(seen)}/{len(player_puuids)} lobby players in local presences, "
+                f"{len(sizes)} with a valid party presence, party sizes {sizes}"
+            )
+        except Exception as exc:
+            log(f"party diagnostics failed: {exc!r}")
 
     map_info = content.get_all_maps()
     map_urls = content.get_map_urls(map_info)
@@ -420,6 +437,7 @@ try:
                     partyOBJ = menu.get_party_json(
                         namesClass.get_players_puuid(Players), presence
                     )
+                    log_party_diagnostics(namesClass.get_players_puuid(Players), presence)
                     # log(f"retrieved names dict: {names}")
                     Players.sort(
                         key=lambda Players: Players["PlayerIdentity"].get(
@@ -733,6 +751,7 @@ try:
                     partyOBJ = menu.get_party_json(
                         namesClass.get_players_puuid(Players), presence
                     )
+                    log_party_diagnostics(namesClass.get_players_puuid(Players), presence)
                     partyMembers = menu.get_party_members(Requests.puuid, presence)
                     partyMembersList = [a["Subject"] for a in partyMembers]
                     # log(f"retrieved names dict: {names}")
