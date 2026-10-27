@@ -121,14 +121,19 @@ try:
 
     history.set_log_sink(log)
 
-    def history_columns(player_subject):
-        # Top Agents / Recent WR / Roles cells for one player (experimental, see history.py)
+    def history_cell(player_subject):
+        # "Recent" cell (win rate, top agents, roles) for one player (experimental, see history.py)
         if not cfg.table.get("lobby_history", True):
-            return ["", "", ""]
+            return ""
         summary = history.summarise(
             player_subject, Requests.pd_url, Requests.get_headers(), history.AGENT_ROLES
         )
-        return history.format_columns(summary, agent_dict)
+        return history.format_cell(
+            summary,
+            agent_dict,
+            wr_color=colors.get_wr_gradient,
+            dim=lambda text: color(text, fore=(130, 130, 130)),
+        )
 
     map_info = content.get_all_maps()
     map_urls = content.get_map_urls(map_info)
@@ -656,7 +661,7 @@ try:
                                 kd,
                                 level,
                                 ranked_rating_earned,
-                                *history_columns(player["Subject"]),
+                                history_cell(player["Subject"]),
                             ]
                         )
 
@@ -913,7 +918,7 @@ try:
                                 kd,
                                 level,
                                 ranked_rating_earned,
-                                *history_columns(player["Subject"]),
+                                history_cell(player["Subject"]),
                             ]
                         )
 
@@ -1068,8 +1073,6 @@ try:
                                     level,
                                     ranked_rating_earned,
                                     "",
-                                    "",
-                                    "",
                                 ]
                             )
 
@@ -1110,6 +1113,7 @@ try:
                     table.set_runtime_col_flag("Pos.", False)
 
                 if game_state == "MENUS":
+                    table.set_runtime_col_flag("Recent", False)
                     table.set_runtime_col_flag("Party", False)
                     table.set_runtime_col_flag("Agent", False)
                     table.set_runtime_col_flag(cfg.weapon.capitalize(), False)

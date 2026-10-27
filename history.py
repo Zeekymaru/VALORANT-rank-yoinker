@@ -39,30 +39,39 @@ DEFAULT_MAX_MATCHES = 5
 REQUEST_TIMEOUT = 10
 TOP_AGENT_COUNT = 3
 UNAVAILABLE_TEXT = "history unavailable"
+NO_GAMES_TEXT = "no recent comp games"
 UNAVAILABLE_STATUSES = (401, 403, 404)
+# Why a summary is not available (the "reason" key; absent when available).
+REASON_UNAVAILABLE = "unavailable"  # 401/403/404, request failure, bad response
+REASON_NO_GAMES = "no_games"  # reachable but the history list is empty
+REASON_NO_RESULT = "no_result"  # matches found but none usable (see _player_result)
+ROLE_SHORT = {"Duelist": "Duel", "Initiator": "Init", "Controller": "Ctrl",
+              "Sentinel": "Sent", "Unknown": "?"}
 
 # The vRY 2.94 code (src/player_stats.py) already calls this path with
 # startIndex=0&endIndex=1&queue=competitive for the user's own puuid and reads
-# Matches[].MatchID. We reuse it for other players and a larger endIndex.
-# TODO(verify): it works for other players' puuids, endIndex up to
-# max_matches, and what it returns (401/403/404/empty?) for private profiles.
+# Matches[].MatchID. Observed working live on 2026-10-27 for other lobby
+# players' puuids with endIndex=5.
+# TODO(verify): what it returns for a private profile (401/403/404 or empty?);
+# no 403 has been seen yet, so unavailable vs. empty can't be told apart there.
 HISTORY_PATH = "/mmr/v1/players/{puuid}/competitiveupdates"
 HISTORY_QUEUE = "competitive"
 # vRY 2.94 already calls this path and reads players[].subject / .stats.
-# TODO(verify): it is readable for matches of other players in the lobby.
+# Observed working live on 2026-10-27 for other lobby players' matches.
 MATCH_DETAILS_PATH = "/match-details/v1/matches/{match_id}"
 
 # Response field names.
 # vRY 2.94 reads "Matches" and "MatchID" from competitiveupdates (see above).
 HISTORY_LIST_FIELD = "Matches"
 HISTORY_MATCH_ID_FIELD = "MatchID"
-# "players" and "subject" are read by vRY 2.94 (src/player_stats.py).
-# TODO(verify): the per-player fields "teamId" and "characterId" below.
+# "players" and "subject" are read by vRY 2.94 (src/player_stats.py). The
+# fields below (teamId, characterId, teams[].teamId, teams[].won) produced
+# sensible agents, roles and win rates in a live run on 2026-10-27, but were
+# only checked by eye, not against an independent source.
 DETAILS_PLAYERS_FIELD = "players"
 PLAYER_SUBJECT_FIELD = "subject"
 PLAYER_TEAM_FIELD = "teamId"
 PLAYER_AGENT_FIELD = "characterId"
-# TODO(verify): "teams" list with "teamId" and a boolean "won".
 DETAILS_TEAMS_FIELD = "teams"
 TEAM_ID_FIELD = "teamId"
 TEAM_WON_FIELD = "won"
@@ -108,8 +117,8 @@ UNKNOWN_ROLE = "Unknown"
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
-def _unavailable():
-    return {"available": False, "games": 0, "wins": 0, "top_agents": [], "roles": {}}
+def _unavailable(reason=REASON_UNAVAILABLE):
+    return {"available": False, "reason": reason, "games": 0, "wins": 0, "top_agents": [], "roles": {}}
 
 
 def _cache_path(cache_dir, *parts):
@@ -217,10 +226,11 @@ def _player_result(puuid, details):
 
 def _aggregate(results, agent_roles):
     if not results:
-        return _unavailable()
+        return _unavailable(REASON_NO_RESULT)
     agents = Counter(agent for agent, _ in results)
     roles = Counter(agent_roles.get(agent, UNKNOWN_ROLE) for agent, _ in results)
-    top = sorted(agents.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP_AGENT_COUNT]
+    # results are newest first and sorted() is stable, so ties go to the most recent agent
+    top = sorted(agents.items(), key=lambda kv: -kv[1])[:TOP_AGENT_COUNT]
     return {
         "available": True,
         "games": len(results),
@@ -251,7 +261,12 @@ def _summarise(puuid, pd_url, headers, agent_roles, max_matches, ttl, cache_dir,
         result = _player_result(puuid, details)
         if result is not None:
             results.append(result)
-    summary = _aggregate(results, agent_roles or {})
+    if ids is None:
+        summary = _unavailable(REASON_UNAVAILABLE)
+    elif not ids:
+        summary = _unavailable(REASON_NO_GAMES)
+    else:
+        summary = _aggregate(results, agent_roles or {})
     # Don't pin a partial sample (some match fetches failed) for the full TTL.
     if path and not fetch_failed:
         _write_json(path, {"fetched_at": now_ts, "summary": summary})
@@ -276,17 +291,29 @@ def summarise(puuid, pd_url, headers, agent_roles, *, max_matches=DEFAULT_MAX_MA
         return _unavailable()
 
 
-def format_columns(summary, agent_names):
-    """[top agents, win rate (wins/games), roles] as table cell strings.
+def _agent_label(name, games):
+    return name if games == 1 else f"{name} ×{games}"
+
+
+def format_cell(summary, agent_names, wr_color=None, dim=None):
+    """One compact table cell, three lines: win rate, top agents, roles.
+
+        60% 3/5
+        Sova · Skye · Viper
+        Init2 Ctrl1 Duel1 Sent1
 
     agent_names maps lowercase agent ID -> display name (main.py's agent_dict).
+    wr_color(percent) -> str and dim(text) -> str are optional styling hooks
+    (main.py passes its colour helpers); plain text is used without them.
     """
+    wr_color = wr_color or str
+    dim = dim or str
     if not summary.get("available"):
-        return [UNAVAILABLE_TEXT, "-", "-"]
+        return dim(NO_GAMES_TEXT if summary.get("reason") == REASON_NO_GAMES else UNAVAILABLE_TEXT)
     games, wins = summary["games"], summary["wins"]
-    agents = ", ".join(f"{agent_names.get(a['agent_id'], 'Unknown')} ({a['games']})"
-                       for a in summary["top_agents"])
-    rate = f"{int(100 * wins / games + 0.5)}% ({wins}/{games})"
-    roles = ", ".join(f"{role} {n}" for role, n in
-                      sorted(summary["roles"].items(), key=lambda kv: (-kv[1], kv[0])))
-    return [agents, rate, roles]
+    rate = f"{wr_color(int(100 * wins / games + 0.5))}% {wins}/{games}"
+    agents = " · ".join(_agent_label(agent_names.get(a["agent_id"], "Unknown"), a["games"])
+                        for a in summary["top_agents"])
+    roles = " ".join(f"{ROLE_SHORT.get(role, role)}{n}" for role, n in
+                     sorted(summary["roles"].items(), key=lambda kv: (-kv[1], kv[0])))
+    return f"{rate}\n{agents}\n{dim(roles)}"

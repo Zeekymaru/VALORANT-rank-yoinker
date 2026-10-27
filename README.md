@@ -77,9 +77,16 @@ If you want to make a small change to the application, you can:
 
 ## Lobby history (experimental)
 
-Three extra columns for each player in the lobby (INGAME and PREGAME): **Top Agents** (top 3 agents in recent
-competitive matches), **Recent WR** (win rate with sample size, e.g. `67% (2/3)`) and **Roles** (how many of those
-matches were on each role). Players whose history is private or unavailable show `history unavailable`.
+One extra **Recent** column for each player in the lobby (INGAME and PREGAME), three lines per player:
+
+```
+60% 3/5                      win rate and sample size (colored like the WR column)
+Sova · Skye · Viper          top 3 agents in recent competitive matches (×N when played more than once)
+Init2 Ctrl1 Duel1 Sent1      matches per role
+```
+
+Players whose history is private or unavailable show `history unavailable`; players with no recent competitive games
+show `no recent comp games`.
 
 * Windows-only, and **unverified against the live API**: every unchecked endpoint/field is marked `# TODO(verify)` in
   `history.py`.

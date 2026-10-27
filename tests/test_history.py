@@ -85,19 +85,31 @@ def test_normal_aggregation(standard_http, roles, tmp_path):
 def test_win_rate_and_sample_size(standard_http, roles, tmp_path):
     summary = run_summary(standard_http, roles, tmp_path)
     assert (summary["games"], summary["wins"]) == (3, 2)
-    agents, rate, role_text = history.format_columns(
-        summary, {"agent-jett": "Jett", "agent-sage": "Sage"})
-    assert rate == "67% (2/3)"
-    assert agents == "Jett (2), Sage (1)"
-    assert role_text == "Duelist 2, Sentinel 1"
+    cell = history.format_cell(summary, {"agent-jett": "Jett", "agent-sage": "Sage"})
+    assert cell == "67% 2/3\nJett ×2 · Sage\nDuel2 Sent1"
+
+
+def test_cell_styling_hooks(standard_http, roles, tmp_path):
+    summary = run_summary(standard_http, roles, tmp_path)
+    cell = history.format_cell(summary, {}, wr_color=lambda pct: f"<{pct}>", dim=lambda text: f"[{text}]")
+    assert cell.splitlines() == ["<67>% 2/3", "Unknown ×2 · Unknown", "[Duel2 Sent1]"]
+    assert history.format_cell(history._unavailable(), {}, dim=lambda text: f"[{text}]") == "[history unavailable]"
+
+
+def test_ties_go_to_the_most_recent_agent(roles, tmp_path):
+    http = FakeHttp(routes_for({"Matches": [{"MatchID": "match-3"}, {"MatchID": "match-1"}]},
+                               {"match-3": "match-3.json", "match-1": "match-1.json"}))
+    summary = run_summary(http, roles, tmp_path)
+    assert [a["agent_id"] for a in summary["top_agents"]] == ["agent-sage", "agent-jett"]
 
 
 def test_empty_history_is_unavailable(roles, tmp_path):
     http = FakeHttp({history_url(): (200, fixture("history_empty.json"))})
     summary = run_summary(http, roles, tmp_path)
     assert summary["available"] is False
+    assert summary["reason"] == "no_games"
     assert http.calls == [history_url()]  # no match details requested
-    assert history.format_columns(summary, {})[0] == "history unavailable"
+    assert history.format_cell(summary, {}) == "no recent comp games"
 
 
 @pytest.mark.parametrize("status", [401, 403, 404])
@@ -106,7 +118,8 @@ def test_blocked_status_is_unavailable(status, roles, tmp_path):
     assert history.match_ids_for(PUUID, PD, HEADERS, http_get=http) is None
     summary = run_summary(http, roles, tmp_path)
     assert summary["available"] is False
-    assert history.format_columns(summary, {})[0] == "history unavailable"
+    assert summary["reason"] == "unavailable"
+    assert history.format_cell(summary, {}) == "history unavailable"
     assert http.calls == [history_url()] * 2  # no retries, no other endpoints
 
 
@@ -130,7 +143,10 @@ def test_team_without_won_field_is_skipped(roles, tmp_path):
 def test_only_unknown_outcomes_is_unavailable(roles, tmp_path):
     http = FakeHttp(routes_for({"Matches": [{"MatchID": "match-2"}]},
                                {"match-2": "match-nowon.json"}))
-    assert run_summary(http, roles, tmp_path)["available"] is False
+    summary = run_summary(http, roles, tmp_path)
+    assert summary["available"] is False
+    assert summary["reason"] == "no_result"
+    assert history.format_cell(summary, {}) == "history unavailable"
 
 
 def test_player_cache_ttl_expires(standard_http, roles, tmp_path):

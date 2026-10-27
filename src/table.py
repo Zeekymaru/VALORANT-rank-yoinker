@@ -21,9 +21,7 @@ HEADER_WINRATE = "WR"
 HEADER_KD_RATIO = "KD"
 HEADER_LEVEL = "Level"
 HEADER_EARNED_RR = "ΔRR"
-HEADER_TOP_AGENTS = "Top Agents"
-HEADER_RECENT_WR = "Recent WR"
-HEADER_ROLES = "Roles"
+HEADER_RECENT = "Recent"
 
 
 TABLE_COLUMN_NAMES = Literal[
@@ -41,9 +39,7 @@ TABLE_COLUMN_NAMES = Literal[
     HEADER_KD_RATIO,
     HEADER_LEVEL,
     HEADER_EARNED_RR,
-    HEADER_TOP_AGENTS,
-    HEADER_RECENT_WR,
-    HEADER_ROLES,
+    HEADER_RECENT,
 ]
 
 
@@ -67,9 +63,7 @@ class Table:
             bool(config.table.get("kd", True)),  # KD
             bool(config.table.get("level", True)),  # Level
             bool(config.table.get("earned_rr", True)),  # Earned RR
-            bool(config.table.get("lobby_history", True)),  # Top agents (recent)
-            bool(config.table.get("lobby_history", True)),  # Recent win rate
-            bool(config.table.get("lobby_history", True)),  # Role distribution
+            bool(config.table.get("lobby_history", True)),  # Recent comp history
         ]
         self.runtime_col_flags = self.col_flags[:]  # making a copy
         
