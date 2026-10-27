@@ -95,6 +95,31 @@
 
 
     
+## Lobby history (experimental)
+
+For each player in the lobby the table gains three columns: their top 3 agents
+in recent competitive matches, win rate with sample size (e.g. `67% (2/3)`),
+and role distribution. Players whose history is private or unavailable show
+`history unavailable`.
+
+* **Windows-only**, like the rest of the tool.
+* **Unverified against the live API.** The endpoints and field names are
+  untested best guesses; each one is marked `# TODO(verify)` in `history.py`.
+  Expect it to need fixes before it works for real.
+* Uses the **local client's tokens** (the same lockfile / entitlements headers
+  as the rank lookup). Nothing is sent anywhere except Riot's own endpoints and
+  valorant-api.com (for agent roles).
+* **Respects private profiles.** A 401, 403 or 404 means "unavailable" and is
+  not retried or worked around.
+* Request volume is bounded: at most 5 matches per player, finished matches are
+  cached forever, and per-player results for 6 hours, in a `cache/` folder
+  next to the program. It is git-ignored and contains other players' IDs from
+  match data, so don't share it.
+* Matches where the player isn't found or the result is unknown are left out of
+  the sample.
+
+Run the tests with `pip install -r requirements-dev.txt` and `pytest`.
+
 <!-- Installation -->
 ## Installation
     
