@@ -154,3 +154,6 @@ node_modules
 
 # Lobby history runtime cache (match details, player summaries)
 cache/
+
+# Separate venv for the Textual TUI (it upgrades rich/Pygments past the console app pins)
+venv-tui/

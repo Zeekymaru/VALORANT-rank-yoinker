@@ -110,10 +110,32 @@ show `no recent comp games`.
 * The **Party** column (same-colored squares mark players queued together) is switched on in this fork; set
   `"party": false` in the `table` section of `config.json` to hide it again. Not verified live yet.
 * Tests: `pip install -r requirements-dev.txt`, then `pytest`.
-* Optional TUI dependencies (the TUI itself is not built yet): after `pip install -r requirements.txt`, run
-  `pip install -r requirements-tui.txt` for Textual, or `requirements-tui-charts.txt` to also get `textual-plotext`
-  charts. They **upgrade `rich` and `Pygments` past the pins in `requirements.txt`** (Textual needs `rich>=14.2` and
-  `Pygments>=2.19.2`), so a separate venv for the TUI keeps the console app's pinned versions untouched.
+
+## TUI (experimental)
+
+An interactive Textual screen next to the console app (`main.py` is untouched). Players fill in row by row, and a
+side panel switches between five graphs with the buttons or the 1-5 keys: **Form** (last games, newest first, with
+agent, map, side rounds and RR), **Atk/Def** (the team's round win rate per side), **Agents** (wins-losses per agent
+and the role split), **Teams** (your team vs the enemy side by side) and **RR trend** (a sparkline, or a line chart
+if `textual-plotext` is installed). Arrow keys pick the player the graph is about, `r` reloads, `q` quits.
+
+Use a **separate venv**: Textual needs `rich>=14.2` and `Pygments>=2.19.2`, while `requirements.txt` pins older ones.
+
+```
+py -3.12 -m venv venv-tui
+venv-tui\Scripts\python.exe -m pip install -r requirements.txt
+venv-tui\Scripts\python.exe -m pip install -r requirements-tui-charts.txt   (or requirements-tui.txt, no charts)
+venv-tui\Scripts\python.exe tui.py --demo     a fake lobby, no VALORANT needed
+venv-tui\Scripts\python.exe tui.py            the live lobby (VALORANT must be running); START-TUI.bat does the same
+```
+
+* **Not run against a live client yet.** The demo and the test suite (headless Textual plus a fake client) pass, but
+  `lobby_live.py`, which mirrors `main.py`'s INGAME / PREGAME / MENUS logic and its streamer-mode rules for names and
+  levels, still needs a real lobby.
+* It polls the client's presence every 2 seconds for the game state, and leaves out the skin column, Discord status
+  and the mobile web server. Rank, HS, WR, level, ΔRR, party squares and the history data come from the same code as
+  the console table. The lobby history settings above (`lobby_history`, `map_history`) apply here too.
+* Not built yet: the card-grid view (planned as a toggle with the current list), sorting and filtering.
 
 ## What about that Tweet?
 
