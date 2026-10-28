@@ -15,7 +15,7 @@ from lobby_data import ALLY_RGB, ENEMY_RGB, SELF_RGB, party_rgb, rank_label, rea
 from src.constants import AGENTCOLORLIST
 
 GRAPHS = [("form", "Form"), ("sides", "Atk/Def"), ("agents", "Agents"), ("teams", "Teams"), ("rr", "RR trend"),
-          ("profile", "Profile"), ("heat", "Heatmap"), ("scatter", "Scatter")]
+          ("profile", "Profile"), ("heat", "Heatmap"), ("scatter", "Scatter"), ("compare", "Compare")]
 LOBBY_GRAPHS = ("teams", "heat", "scatter")  # about the whole lobby, not the selected player
 # the last column is the fingerprint: one block per radar axis (Aim Entry Survival Utility Objective Consistency)
 COLUMNS = ["", "Agent", "Name", "Rank", "RR", "Peak", "HS", "WR", "Lvl", "ΔRR", "Recent", "Form", "AESUOC"]
@@ -615,6 +615,66 @@ def profile_view(rows, selected):
         text.append(detail[label] + "\n", style=DIM)
     text.append(f"\nACS {_fmt(mine['acs'], '.0f')} · K/D {_fmt(mine['kd'], '.2f')} · "
                 f"{_fmt(mine['kills'], 'd')}/{_fmt(mine['deaths'], 'd')}/{_fmt(mine['assists'], 'd')}")
+    return text
+
+
+# rate key -> (label, factor applied before printing, format); higher is better for every one of them
+COMPARE_METRICS = (("acs", "ACS", 1, ".0f"), ("adr", "ADR", 1, ".0f"), ("kd", "K/D", 1, ".2f"),
+                   ("hs", "Headshot %", 100, ".0f"), ("kast", "KAST %", 100, ".0f"),
+                   ("first_blood", "First blood % of rounds", 100, ".1f"), ("util", "Casts per round", 1, ".1f"))
+
+
+def compare_view(rows, selected):
+    """You (the row marked is_self) against the selected player: each axis as two bars, then the raw rates with a gap.
+
+    Both are ranked among the same lobby, so the bars are comparable. Green means you are ahead, red behind."""
+    row = next((r for r in rows if r.puuid == selected), None)
+    me = next((r for r in rows if r.is_self), None)
+    if row is None:
+        return Text("No player selected yet.", style=DIM)
+    if me is None:
+        return Text("Can't tell which player is you in this lobby.", style=DIM)
+    if row.puuid == me.puuid:
+        return Text("That's you. Pick another player to compare against.", style=DIM)
+    profiles = lobby_profiles(rows)
+    if not profiles.get(me.puuid):
+        return Text("Your own performance counts aren't loaded yet (they come from your match history).", style=DIM)
+    if not profiles.get(row.puuid):
+        return Text(f"{row.name} has no performance counts to compare (private, still loading or not cached yet).",
+                    style=DIM)
+    mine, theirs = profiles[me.puuid], profiles[row.puuid]
+    axes = profile.radar_axes(profiles)
+    text = Text(f"You vs {row.name}", style="bold")
+    text.append(f"   {mine['games']} vs {theirs['games']} games\n", style=DIM)
+    text.append("You   ", style=rgb_style(SELF_RGB))
+    text.append_text(archetype_text(profile.archetype(axes[me.puuid], mine["games"])))
+    text.append("\n" + f"{row.name[:5]:<6}", style=rgb_style(ALLY_RGB if row.ally else ENEMY_RGB))
+    text.append_text(archetype_text(profile.archetype(axes[row.puuid], theirs["games"])))
+    text.append("\n\nLobby percentile (0 = lowest, 100 = highest in this lobby)\n", style=DIM)
+    for label, _ in profile.AXES:
+        a, b = axes[me.puuid][label], axes[row.puuid][label]
+        text.append(f"{label:<12}")
+        for value in (a, b):
+            if value is None:
+                text.append("··········   —  ", style=DIM)
+            else:
+                text.append(bar(value, 10), style=rgb_style(percentile_rgb(value)))
+                text.append(f" {value * 100:3.0f}  ", style="bold " + rgb_style(percentile_rgb(value)))
+        if a is not None and b is not None:
+            gap = (a - b) * 100
+            text.append(f"{gap:+4.0f}", style=rgb_style(GREEN if gap > 2 else RED if gap < -2 else (150, 150, 160)))
+        text.append("\n")
+    text.append(f"\n{'':<26}{'you':>8}{row.name[:8]:>10}{'gap':>9}\n", style=DIM)
+    for key, label, factor, spec in COMPARE_METRICS:
+        a, b = mine.get(key), theirs.get(key)
+        text.append(f"{label:<26}", style=DIM)
+        text.append(f"{_fmt(None if a is None else a * factor, spec):>8}")
+        text.append(f"{_fmt(None if b is None else b * factor, spec):>10}")
+        if a is not None and b is not None:
+            gap = (a - b) * factor
+            text.append(f"{format(gap, '+' + spec):>9}",
+                        style=rgb_style(GREEN if gap > 0 else RED if gap < 0 else (150, 150, 160)))
+        text.append("\n")
     return text
 
 

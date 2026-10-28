@@ -333,3 +333,26 @@ def test_leaders_view_names_the_top_player_per_stat_and_both_team_averages():
     text = plain(tui_views.leaders_view(_lobby()))
     assert "Lobby leaders" in text and "ACS" in text and "KAST" in text and "Team average" in text
     assert plain(tui_views.leaders_view([])).startswith("Lobby leaders appear")
+
+
+def test_compare_view_sets_you_against_the_selected_player():
+    rows = [loaded_row(puuid="me", name="Me#1", is_self=True, history=_with_stats()),
+            loaded_row(puuid="p2", name="Foe#2", ally=False, history=_with_stats(damage=12000, kast_rounds=55)),
+            loaded_row(puuid="p3", history=history._unavailable())]
+    text = tui_views.compare_view(rows, "p2").plain
+    assert text.startswith("You vs Foe#2   3 vs 3 games")
+    assert all(label in text for label, _ in tui_views.profile.AXES)
+    assert "ADR" in text and "150" in text and "200" in text  # your ADR 150 and ACS 200 are printed
+    assert "+" in text or "-" in text  # a gap column exists
+
+
+def test_compare_view_explains_what_is_missing():
+    me = loaded_row(puuid="me", is_self=True, history=_with_stats())
+    other = loaded_row(puuid="p2", history=_with_stats())
+    assert "No player selected" in plain(tui_views.compare_view([me], "x"))
+    assert "That's you" in plain(tui_views.compare_view([me, other], "me"))
+    assert "which player is you" in plain(tui_views.compare_view([other], "p2"))
+    pending = loaded_row(puuid="p2", history_state="pending", history=None)
+    assert "has no performance counts" in plain(tui_views.compare_view([me, pending], "p2"))
+    gone = loaded_row(puuid="me", is_self=True, history=history._unavailable())
+    assert "aren't loaded yet" in plain(tui_views.compare_view([gone, other], "p2"))

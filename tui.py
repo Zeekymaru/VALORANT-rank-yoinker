@@ -24,7 +24,7 @@ import lobby_store
 from lobby_data import DemoSource, LobbyModel, LobbyReset, Status
 import player_profile
 from tui_views import (COLUMNS, GRAPHS, LOBBY_GRAPHS, agents_view, card_text, fingerprint, form_view, heat_view,
-                       lobby_axes, profile_view, row_cells, rr_series, rr_view, scatter_caption, scatter_fallback,
+                       compare_view, lobby_axes, profile_view, row_cells, rr_series, rr_view, scatter_caption, scatter_fallback,
                        scatter_points, sides_view, detail_view, team_stats, team_strip, teams_view, _few_games)
 
 try:  # optional: real charts for the RR trend (pip install -r requirements-tui-charts.txt)
@@ -155,7 +155,7 @@ class LobbyApp(App):
     #detail-right { width: 1fr; padding: 0 1; border-left: solid $primary-darken-3; }
     LobbyApp.-cards #views { width: 4fr; }
     #side { width: 2fr; min-width: 46; padding: 0 1; border-left: solid $primary-darken-2; }
-    #graph-buttons { layout: grid; grid-size: 4; grid-gutter: 0 1; grid-rows: 3; height: 6; }
+    #graph-buttons { layout: grid; grid-size: 4; grid-gutter: 0 1; grid-rows: 3; height: 9; }
     #graph-buttons Button { width: 100%; min-width: 9; }
     #scatter-next { margin-bottom: 1; }
     #scatter-plot { height: 22; }
@@ -462,6 +462,9 @@ class LobbyApp(App):
         if self.graph in LOBBY_GRAPHS:
             title = "Lobby"
             renderable = self._lobby_graph()
+        elif self.graph == "compare":
+            title = f"You vs {row.name}" if row and not row.is_self else label
+            renderable = compare_view(self.model.ordered, self.selected)
         elif self.graph == "profile":
             title = f"{row.name} — {label}" if row else label
             renderable = profile_view(self.model.ordered, self.selected)

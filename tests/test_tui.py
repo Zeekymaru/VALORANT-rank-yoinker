@@ -507,3 +507,19 @@ def test_list_view_detail_strip_follows_the_selected_player():
         assert app.model.rows[app.selected].name in text_of(app.query_one("#detail-card", Static))
 
     run(scenario)
+
+
+def test_compare_graph_pits_you_against_the_selected_player():
+    async def scenario(app, pilot):
+        await pilot.press("9")
+        await pilot.pause(0.2)
+        assert app.graph == "compare"
+        me = next(r for r in app.model.ordered if r.is_self)
+        assert app.selected == me.puuid
+        assert "That's you" in text_of(app.query_one("#g-compare", Static))
+        await pilot.press("down")
+        await pilot.pause(0.1)
+        body = text_of(app.query_one("#g-compare", Static))
+        assert "You vs" in body and "Consistency" in body and "gap" in body
+
+    run(scenario)
