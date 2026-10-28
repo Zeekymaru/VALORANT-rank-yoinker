@@ -236,3 +236,8 @@ Whilst effort has been made to abide by Riot's API rules; you acknowledge that u
 
 [downloads-shield]: https://img.shields.io/github/downloads/zayKenyon/VALORANT-rank-yoinker/total?style=for-the-badge&logo=github
 [downloads-url]: https://github.com/zayKenyon/VALORANT-rank-yoinker/releases/latest
+
+## Which stats actually matter
+
+`python tools/moneyball.py` checks, on the cached matches, which stats are repeatable and which predict the second half of a game
+(standard library only, no network). The last report is `tools/moneyball-report.md`.
