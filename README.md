@@ -117,7 +117,7 @@ An interactive Textual screen next to the console app (`main.py` is untouched). 
 side panel switches between five graphs with the buttons or the 1-5 keys: **Form** (last games, newest first, with
 agent, map, side rounds and RR), **Atk/Def** (the team's round win rate per side), **Agents** (wins-losses per agent
 and the role split), **Teams** (your team vs the enemy side by side) and **RR trend** (a sparkline, or a line chart
-if `textual-plotext` is installed) and **Profile** (key 6), **Heatmap** (key 7), **Scatter** (key 8) and **Compare** (key 9), see below. Arrow keys pick the player the graph is about, `r` reloads, `q` quits.
+if `textual-plotext` is installed) and **Profile** (key 6), **Heatmap** (key 7), **Scatter** (key 8) and **Compare** (key 9) and **Guns** (key 0), see below. Arrow keys pick the player the graph is about, `r` reloads, `q` quits.
 
 The left side has two views, switched with `v` or the **View** button. **List** is one compact line per player.
 Under the table, the list view has a **detail strip** for the selected player: their card, a **Lobby leaders** block
@@ -150,6 +150,11 @@ the rest, so with fewer than 3 games it is drawn dimmed. Cards also get an `ACS 
   same lobby, with the gap; below that the raw rates (ACS, ADR, K/D, HS %, KAST %, first-blood %, casts per round)
   with green where you are ahead and red where you are behind. Selecting yourself says so; a player without
   performance counts is explained rather than shown empty.
+* **Guns (0):** the selected player's kills by weapon over the sampled games (with rounds that started with that weapon
+  and kills per 100 of those rounds, shown once there are 20 rounds), their team's pistol-round record with their
+  own kills and deaths in them, and the team's round win rate by buy band (eco under 1500 average loadout, full buy
+  3500+, pistol rounds left out) with their kills per round. The bands are a heuristic, not a Riot label. Summaries
+  cached before this existed say so and fill in on the next refresh. Weapon ids come from `weapons.py`.
 * **Scatter (8):** one point per player, your team cyan, the enemy red, the selected player yellow, with dashed
   lobby-average lines. `s` (or the button) cycles the pairing: ADR vs first-blood rate, KAST vs ADR, HS vs ADR,
   ACS vs K/D, casts vs KAST. It needs `textual-plotext` (`requirements-tui-charts.txt`); without it the same pairing

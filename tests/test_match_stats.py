@@ -67,3 +67,46 @@ def test_total_sums_and_skips_missing_counts():
     total = match_stats.total([one, two, None])
     assert total["games"] == 2 and total["kills"] == 2 and total["casts"] == 3
     assert match_stats.total([None]) is None
+
+
+GHOST = "1baa85b4-4c70-1284-64bb-6481dfc3bb4e"
+VANDAL = "9c82e19d-4575-0200-1a81-3eacf00cf872"
+CLASSIC = "29a0cfab-485b-f5d5-779a-b59f85e204a8"
+
+
+def test_guns_count_enemy_weapon_kills_and_rounds_held():
+    s = stats_for()
+    # A's one real kill was a Ghost kill in round 0; the Vandal teamkill in round 2 doesn't count
+    assert s["guns"] == {GHOST: [1, 1], VANDAL: [0, 2]}
+    assert stats_for("bbbb0000-0000-0000-0000-000000000002")["guns"] == {CLASSIC: [0, 1], VANDAL: [1, 2]}
+
+
+def test_non_weapon_kills_are_not_gun_kills():
+    match = details()
+    match["roundResults"][0]["playerStats"][0]["kills"][0]["finishingDamage"] = {"damageType": "Ability", "damageItem": "Ultimate"}
+    assert stats_for(match=match)["guns"][GHOST] == [0, 1]
+
+
+def test_pistol_round_record_is_the_players_own_team():
+    assert stats_for()["pistol"] == {"rounds": 1, "won": 1, "kills": 1, "deaths": 0}
+    red = stats_for("cccc0000-0000-0000-0000-000000000003")["pistol"]
+    assert red == {"rounds": 1, "won": 0, "kills": 0, "deaths": 1}
+
+
+def test_buys_are_banded_by_team_average_loadout_and_skip_pistols():
+    s = stats_for()
+    # round 1: Blue averages 4000 (full) and wins, A gets no kill; round 2: Blue averages 3950 (full) and loses
+    assert s["buys"] == {"full": {"rounds": 2, "won": 1, "kills": 0}}
+    red = stats_for("cccc0000-0000-0000-0000-000000000003")["buys"]
+    assert red["eco"] == {"rounds": 1, "won": 0, "kills": 1}  # C killed A in round 1
+    assert red["full"] == {"rounds": 1, "won": 1, "kills": 0}
+
+
+def test_total_merges_guns_pistol_and_buys_and_stays_none_for_old_summaries():
+    one = stats_for()
+    merged = match_stats.total([one, one])
+    assert merged["guns"][GHOST] == [2, 2] and merged["pistol"]["won"] == 2 and merged["buys"]["full"]["rounds"] == 4
+    old = {k: v for k, v in one.items() if k not in ("guns", "pistol", "buys")}
+    legacy = match_stats.total([old])
+    assert legacy["guns"] is None and legacy["pistol"] is None and legacy["buys"] is None
+    assert match_stats.total([old, one])["guns"] == one["guns"]

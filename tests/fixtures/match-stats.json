@@ -1,229 +1,290 @@
 {
- "matchInfo": {
-  "matchId": "stats-1",
-  "mapId": "/Game/Maps/Ascent/Ascent"
- },
- "players": [
-  {
-   "subject": "aaaa0000-0000-0000-0000-000000000001",
-   "teamId": "Blue",
-   "characterId": "AGENT-JETT",
-   "stats": {
-    "score": 700,
-    "roundsPlayed": 3,
-    "kills": 1,
-    "deaths": 2,
-    "assists": 0,
-    "abilityCasts": {
-     "grenadeCasts": 2,
-     "ability1Casts": 1,
-     "ability2Casts": null,
-     "ultimateCasts": 0
+  "matchInfo": {
+    "matchId": "stats-1",
+    "mapId": "/Game/Maps/Ascent/Ascent"
+  },
+  "players": [
+    {
+      "subject": "aaaa0000-0000-0000-0000-000000000001",
+      "teamId": "Blue",
+      "characterId": "AGENT-JETT",
+      "stats": {
+        "score": 700,
+        "roundsPlayed": 3,
+        "kills": 1,
+        "deaths": 2,
+        "assists": 0,
+        "abilityCasts": {
+          "grenadeCasts": 2,
+          "ability1Casts": 1,
+          "ability2Casts": null,
+          "ultimateCasts": 0
+        }
+      }
+    },
+    {
+      "subject": "bbbb0000-0000-0000-0000-000000000002",
+      "teamId": "Blue",
+      "characterId": "AGENT-JETT",
+      "stats": {
+        "score": 500,
+        "roundsPlayed": 3,
+        "kills": 1,
+        "deaths": 1,
+        "assists": 1
+      }
+    },
+    {
+      "subject": "cccc0000-0000-0000-0000-000000000003",
+      "teamId": "Red",
+      "characterId": "AGENT-JETT",
+      "stats": {
+        "score": 300,
+        "roundsPlayed": 3,
+        "kills": 1,
+        "deaths": 2,
+        "assists": 0
+      }
+    },
+    {
+      "subject": "dddd0000-0000-0000-0000-000000000004",
+      "teamId": "Red",
+      "characterId": "AGENT-JETT",
+      "stats": {
+        "score": 400,
+        "roundsPlayed": 3,
+        "kills": 1,
+        "deaths": 0,
+        "assists": 0
+      }
     }
-   }
-  },
-  {
-   "subject": "bbbb0000-0000-0000-0000-000000000002",
-   "teamId": "Blue",
-   "characterId": "AGENT-JETT",
-   "stats": {
-    "score": 500,
-    "roundsPlayed": 3,
-    "kills": 1,
-    "deaths": 1,
-    "assists": 1
-   }
-  },
-  {
-   "subject": "cccc0000-0000-0000-0000-000000000003",
-   "teamId": "Red",
-   "characterId": "AGENT-JETT",
-   "stats": {
-    "score": 300,
-    "roundsPlayed": 3,
-    "kills": 1,
-    "deaths": 2,
-    "assists": 0
-   }
-  },
-  {
-   "subject": "dddd0000-0000-0000-0000-000000000004",
-   "teamId": "Red",
-   "characterId": "AGENT-JETT",
-   "stats": {
-    "score": 400,
-    "roundsPlayed": 3,
-    "kills": 1,
-    "deaths": 0,
-    "assists": 0
-   }
-  }
- ],
- "teams": [
-  {
-   "teamId": "Blue",
-   "won": true,
-   "roundsPlayed": 3,
-   "roundsWon": 2
-  },
-  {
-   "teamId": "Red",
-   "won": false,
-   "roundsPlayed": 3,
-   "roundsWon": 1
-  }
- ],
- "roundResults": [
-  {
-   "roundNum": 0,
-   "winningTeam": "Blue",
-   "winningTeamRole": "Attacker",
-   "bombPlanter": "aaaa0000-0000-0000-0000-000000000001",
-   "bombDefuser": null,
-   "playerStats": [
+  ],
+  "teams": [
     {
-     "subject": "aaaa0000-0000-0000-0000-000000000001",
-     "kills": [
-      {
-       "roundTime": 10000,
-       "killer": "aaaa0000-0000-0000-0000-000000000001",
-       "victim": "cccc0000-0000-0000-0000-000000000003",
-       "assistants": [
-        "bbbb0000-0000-0000-0000-000000000002"
-       ]
-      }
-     ],
-     "damage": [
-      {
-       "receiver": "cccc0000-0000-0000-0000-000000000003",
-       "damage": 150,
-       "headshots": 1,
-       "bodyshots": 2,
-       "legshots": 0
-      },
-      {
-       "receiver": "bbbb0000-0000-0000-0000-000000000002",
-       "damage": 20,
-       "headshots": 0,
-       "bodyshots": 1,
-       "legshots": 0
-      }
-     ],
-     "economy": {}
+      "teamId": "Blue",
+      "won": true,
+      "roundsPlayed": 3,
+      "roundsWon": 2
     },
     {
-     "subject": "bbbb0000-0000-0000-0000-000000000002",
-     "kills": [],
-     "damage": [],
-     "economy": {}
-    },
-    {
-     "subject": "cccc0000-0000-0000-0000-000000000003",
-     "kills": [],
-     "damage": [],
-     "economy": {}
-    },
-    {
-     "subject": "dddd0000-0000-0000-0000-000000000004",
-     "kills": [],
-     "damage": [],
-     "economy": {}
+      "teamId": "Red",
+      "won": false,
+      "roundsPlayed": 3,
+      "roundsWon": 1
     }
-   ]
-  },
-  {
-   "roundNum": 1,
-   "winningTeam": "Blue",
-   "winningTeamRole": "Defender",
-   "bombPlanter": null,
-   "bombDefuser": "bbbb0000-0000-0000-0000-000000000002",
-   "playerStats": [
+  ],
+  "roundResults": [
     {
-     "subject": "aaaa0000-0000-0000-0000-000000000001",
-     "kills": [],
-     "damage": [],
-     "economy": {}
+      "roundNum": 0,
+      "winningTeam": "Blue",
+      "winningTeamRole": "Attacker",
+      "bombPlanter": "aaaa0000-0000-0000-0000-000000000001",
+      "bombDefuser": null,
+      "playerStats": [
+        {
+          "subject": "aaaa0000-0000-0000-0000-000000000001",
+          "kills": [
+            {
+              "roundTime": 10000,
+              "killer": "aaaa0000-0000-0000-0000-000000000001",
+              "victim": "cccc0000-0000-0000-0000-000000000003",
+              "assistants": [
+                "bbbb0000-0000-0000-0000-000000000002"
+              ],
+              "finishingDamage": {
+                "damageType": "Weapon",
+                "damageItem": "1baa85b4-4c70-1284-64bb-6481dfc3bb4e",
+                "isSecondaryFireMode": false
+              }
+            }
+          ],
+          "damage": [
+            {
+              "receiver": "cccc0000-0000-0000-0000-000000000003",
+              "damage": 150,
+              "headshots": 1,
+              "bodyshots": 2,
+              "legshots": 0
+            },
+            {
+              "receiver": "bbbb0000-0000-0000-0000-000000000002",
+              "damage": 20,
+              "headshots": 0,
+              "bodyshots": 1,
+              "legshots": 0
+            }
+          ],
+          "economy": {
+            "weapon": "1baa85b4-4c70-1284-64bb-6481dfc3bb4e",
+            "loadoutValue": 800
+          }
+        },
+        {
+          "subject": "bbbb0000-0000-0000-0000-000000000002",
+          "kills": [],
+          "damage": [],
+          "economy": {
+            "weapon": "29a0cfab-485b-f5d5-779a-b59f85e204a8",
+            "loadoutValue": 800
+          }
+        },
+        {
+          "subject": "cccc0000-0000-0000-0000-000000000003",
+          "kills": [],
+          "damage": [],
+          "economy": {
+            "weapon": "29a0cfab-485b-f5d5-779a-b59f85e204a8",
+            "loadoutValue": 800
+          }
+        },
+        {
+          "subject": "dddd0000-0000-0000-0000-000000000004",
+          "kills": [],
+          "damage": [],
+          "economy": {
+            "weapon": "29a0cfab-485b-f5d5-779a-b59f85e204a8",
+            "loadoutValue": 800
+          }
+        }
+      ]
     },
     {
-     "subject": "bbbb0000-0000-0000-0000-000000000002",
-     "kills": [
-      {
-       "roundTime": 7000,
-       "killer": "bbbb0000-0000-0000-0000-000000000002",
-       "victim": "cccc0000-0000-0000-0000-000000000003",
-       "assistants": []
-      }
-     ],
-     "damage": [],
-     "economy": {}
+      "roundNum": 1,
+      "winningTeam": "Blue",
+      "winningTeamRole": "Defender",
+      "bombPlanter": null,
+      "bombDefuser": "bbbb0000-0000-0000-0000-000000000002",
+      "playerStats": [
+        {
+          "subject": "aaaa0000-0000-0000-0000-000000000001",
+          "kills": [],
+          "damage": [],
+          "economy": {
+            "weapon": "9c82e19d-4575-0200-1a81-3eacf00cf872",
+            "loadoutValue": 4000
+          }
+        },
+        {
+          "subject": "bbbb0000-0000-0000-0000-000000000002",
+          "kills": [
+            {
+              "roundTime": 7000,
+              "killer": "bbbb0000-0000-0000-0000-000000000002",
+              "victim": "cccc0000-0000-0000-0000-000000000003",
+              "assistants": [],
+              "finishingDamage": {
+                "damageType": "Weapon",
+                "damageItem": "9c82e19d-4575-0200-1a81-3eacf00cf872",
+                "isSecondaryFireMode": false
+              }
+            }
+          ],
+          "damage": [],
+          "economy": {
+            "weapon": "9c82e19d-4575-0200-1a81-3eacf00cf872",
+            "loadoutValue": 4000
+          }
+        },
+        {
+          "subject": "cccc0000-0000-0000-0000-000000000003",
+          "kills": [
+            {
+              "roundTime": 5000,
+              "killer": "cccc0000-0000-0000-0000-000000000003",
+              "victim": "aaaa0000-0000-0000-0000-000000000001",
+              "assistants": [],
+              "finishingDamage": {
+                "damageType": "Weapon",
+                "damageItem": "9c82e19d-4575-0200-1a81-3eacf00cf872",
+                "isSecondaryFireMode": false
+              }
+            }
+          ],
+          "damage": [],
+          "economy": {
+            "weapon": "29a0cfab-485b-f5d5-779a-b59f85e204a8",
+            "loadoutValue": 500
+          }
+        },
+        {
+          "subject": "dddd0000-0000-0000-0000-000000000004",
+          "kills": [],
+          "damage": [],
+          "economy": {
+            "weapon": "29a0cfab-485b-f5d5-779a-b59f85e204a8",
+            "loadoutValue": 900
+          }
+        }
+      ]
     },
     {
-     "subject": "cccc0000-0000-0000-0000-000000000003",
-     "kills": [
-      {
-       "roundTime": 5000,
-       "killer": "cccc0000-0000-0000-0000-000000000003",
-       "victim": "aaaa0000-0000-0000-0000-000000000001",
-       "assistants": []
-      }
-     ],
-     "damage": [],
-     "economy": {}
-    },
-    {
-     "subject": "dddd0000-0000-0000-0000-000000000004",
-     "kills": [],
-     "damage": [],
-     "economy": {}
+      "roundNum": 2,
+      "winningTeam": "Red",
+      "winningTeamRole": "Attacker",
+      "bombPlanter": null,
+      "bombDefuser": null,
+      "playerStats": [
+        {
+          "subject": "aaaa0000-0000-0000-0000-000000000001",
+          "kills": [
+            {
+              "roundTime": 1000,
+              "killer": "aaaa0000-0000-0000-0000-000000000001",
+              "victim": "bbbb0000-0000-0000-0000-000000000002",
+              "assistants": [],
+              "finishingDamage": {
+                "damageType": "Weapon",
+                "damageItem": "9c82e19d-4575-0200-1a81-3eacf00cf872",
+                "isSecondaryFireMode": false
+              }
+            }
+          ],
+          "damage": [],
+          "economy": {
+            "weapon": "9c82e19d-4575-0200-1a81-3eacf00cf872",
+            "loadoutValue": 4000
+          }
+        },
+        {
+          "subject": "bbbb0000-0000-0000-0000-000000000002",
+          "kills": [],
+          "damage": [],
+          "economy": {
+            "weapon": "9c82e19d-4575-0200-1a81-3eacf00cf872",
+            "loadoutValue": 3900
+          }
+        },
+        {
+          "subject": "cccc0000-0000-0000-0000-000000000003",
+          "kills": [],
+          "damage": [],
+          "economy": {
+            "weapon": "9c82e19d-4575-0200-1a81-3eacf00cf872",
+            "loadoutValue": 3800
+          }
+        },
+        {
+          "subject": "dddd0000-0000-0000-0000-000000000004",
+          "kills": [
+            {
+              "roundTime": 3000,
+              "killer": "dddd0000-0000-0000-0000-000000000004",
+              "victim": "aaaa0000-0000-0000-0000-000000000001",
+              "assistants": [],
+              "finishingDamage": {
+                "damageType": "Weapon",
+                "damageItem": "9c82e19d-4575-0200-1a81-3eacf00cf872",
+                "isSecondaryFireMode": false
+              }
+            }
+          ],
+          "damage": [],
+          "economy": {
+            "weapon": "9c82e19d-4575-0200-1a81-3eacf00cf872",
+            "loadoutValue": 3800
+          }
+        }
+      ]
     }
-   ]
-  },
-  {
-   "roundNum": 2,
-   "winningTeam": "Red",
-   "winningTeamRole": "Attacker",
-   "bombPlanter": null,
-   "bombDefuser": null,
-   "playerStats": [
-    {
-     "subject": "aaaa0000-0000-0000-0000-000000000001",
-     "kills": [
-      {
-       "roundTime": 1000,
-       "killer": "aaaa0000-0000-0000-0000-000000000001",
-       "victim": "bbbb0000-0000-0000-0000-000000000002",
-       "assistants": []
-      }
-     ],
-     "damage": [],
-     "economy": {}
-    },
-    {
-     "subject": "bbbb0000-0000-0000-0000-000000000002",
-     "kills": [],
-     "damage": [],
-     "economy": {}
-    },
-    {
-     "subject": "cccc0000-0000-0000-0000-000000000003",
-     "kills": [],
-     "damage": [],
-     "economy": {}
-    },
-    {
-     "subject": "dddd0000-0000-0000-0000-000000000004",
-     "kills": [
-      {
-       "roundTime": 3000,
-       "killer": "dddd0000-0000-0000-0000-000000000004",
-       "victim": "aaaa0000-0000-0000-0000-000000000001",
-       "assistants": []
-      }
-     ],
-     "damage": [],
-     "economy": {}
-    }
-   ]
-  }
- ]
+  ]
 }

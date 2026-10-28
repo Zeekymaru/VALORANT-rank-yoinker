@@ -415,3 +415,26 @@ def test_threat_text_and_strip_name_the_enemy_threats_only():
     assert "Threat" not in tui_views.card_text(rows[0], NAMES, "Ascent", None, threats["p0"]).plain
     ordered = [r.puuid for r in tui_views.sort_filter_rows(rows, "threat")]
     assert ordered[0] == "p9" and ordered[-1] == "p0"
+
+
+def test_guns_view_lists_weapons_pistol_record_and_buys():
+    stats = {"games": 4, "guns": {"v1": [30, 100], "p1": [10, 80], "g1": [1, 5]},
+             "pistol": {"rounds": 8, "won": 6, "kills": 7, "deaths": 3},
+             "buys": {"eco": {"rounds": 10, "won": 2, "kills": 4}, "full": {"rounds": 50, "won": 30, "kills": 40}}}
+    summary = {"available": True, "games": 4, "stats": stats}
+    plain = tui_views.guns_view(summary).plain
+    assert tui_views.weapons.weapon_name("v1").startswith("id v1")  # unknown ids are shown, not hidden
+    assert "30" in plain and "75%" in plain  # pistols won 6/8
+    assert "Eco" in plain and "20% won" in plain and "Full buy" in plain and "60% won" in plain and "0.80 kills/round" in plain
+    assert "—" in plain  # the 5-round weapon is too thin for a per-100 rate
+
+
+def test_guns_view_handles_old_summaries_and_missing_data():
+    old = {"available": True, "games": 3, "stats": {"games": 3, "kills": 5}}
+    assert "next refresh" in tui_views.guns_view(old).plain
+    assert tui_views.guns_view({"available": False}).plain  # same no-history text as the other views
+
+
+def test_graph_keys_run_one_to_nine_then_zero():
+    assert [tui_views.graph_key(n) for n in (1, 9, 10)] == ["1", "9", "0"]
+    assert tui_views.GRAPHS[-1][0] == "guns"

@@ -25,7 +25,7 @@ import past_games
 from lobby_data import DemoSource, LobbyModel, LobbyReset, Status
 import player_profile
 from tui_views import (COLUMNS, GRAPHS, LOBBY_GRAPHS, agents_view, card_text, fingerprint, form_view, heat_view,
-                       compare_view, lobby_axes, lobby_threats, threat_strip, threat_text, sort_filter_rows, SORTS, FILTERS, profile_view, row_cells, rr_series, rr_view, scatter_caption, scatter_fallback,
+                       compare_view, graph_key, guns_view, lobby_axes, lobby_threats, threat_strip, threat_text, sort_filter_rows, SORTS, FILTERS, profile_view, row_cells, rr_series, rr_view, scatter_caption, scatter_fallback,
                        scatter_points, sides_view, detail_view, team_stats, team_strip, teams_view, _few_games)
 
 try:  # optional: real charts for the RR trend (pip install -r requirements-tui-charts.txt)
@@ -197,7 +197,7 @@ class LobbyApp(App):
         Binding("i", "import_past", "Import past games"),
         Binding("o", "next_sort", "Sort"),
         Binding("f", "next_filter", "Show"),
-        *[Binding(str(number), f"graph('{key}')", label) for number, (key, label) in enumerate(GRAPHS, 1)],
+        *[Binding(graph_key(number), f"graph('{key}')", label) for number, (key, label) in enumerate(GRAPHS, 1)],
     ]
 
     def __init__(self, source, store_dir=None, **kwargs):
@@ -239,7 +239,7 @@ class LobbyApp(App):
             with Vertical(id="side"):
                 with Horizontal(id="graph-buttons"):
                     for number, (key, label) in enumerate(GRAPHS, 1):
-                        yield Button(f"{number} {label}", id=f"btn-{key}")
+                        yield Button(f"{graph_key(number)} {label}", id=f"btn-{key}")
                 yield Static(id="graph-title")
                 with ContentSwitcher(initial=f"g-{GRAPHS[0][0]}", id="graphs"):
                     for key, _ in GRAPHS:
@@ -536,6 +536,7 @@ class LobbyApp(App):
                 "form": lambda: form_view(summary, names, maps),
                 "sides": lambda: sides_view(summary),
                 "agents": lambda: agents_view(summary, names),
+                "guns": lambda: guns_view(summary),
                 "rr": lambda: rr_view(summary),
             }[self.graph]()
             if self.graph == "rr":

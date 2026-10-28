@@ -66,7 +66,7 @@ def test_number_keys_switch_the_graph_and_highlight_the_button():
     async def scenario(app, pilot):
         switcher = app.query_one("#graphs", ContentSwitcher)
         for number, (key, label) in enumerate(tui.GRAPHS, 1):
-            await pilot.press(str(number))
+            await pilot.press(tui.graph_key(number))
             await pilot.pause(0.1)
             assert app.graph == key and switcher.current == f"g-{key}"
             for other, _ in tui.GRAPHS:

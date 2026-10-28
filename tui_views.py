@@ -10,12 +10,24 @@ from rich.table import Table
 from rich.text import Text
 
 import history
+import match_stats
+import weapons
 import player_profile as profile
 from lobby_data import ALLY_RGB, ENEMY_RGB, SELF_RGB, party_rgb, rank_label, readable_rgb
 from src.constants import AGENTCOLORLIST
 
 GRAPHS = [("form", "Form"), ("sides", "Atk/Def"), ("agents", "Agents"), ("teams", "Teams"), ("rr", "RR trend"),
-          ("profile", "Profile"), ("heat", "Heatmap"), ("scatter", "Scatter"), ("compare", "Compare")]
+          ("profile", "Profile"), ("heat", "Heatmap"), ("scatter", "Scatter"), ("compare", "Compare"), ("guns", "Guns")]
+GUN_ROWS = 6  # weapons listed in the Guns view
+GUN_RATE_MIN_HELD = 20  # rounds with a weapon in hand before its kills-per-100 figure is shown
+BUY_LABELS = {"eco": "Eco", "half": "Half buy", "full": "Full buy"}
+
+
+def graph_key(number):
+    """The key that opens the number-th graph: 1-9, then 0 for the tenth."""
+    return str(number % 10)
+
+
 LOBBY_GRAPHS = ("teams", "heat", "scatter")  # about the whole lobby, not the selected player
 # the last column is the fingerprint: one block per radar axis (Aim Entry Survival Utility Objective Consistency)
 COLUMNS = ["", "Agent", "Name", "Rank", "RR", "Peak", "HS", "WR", "Lvl", "ΔRR", "Recent", "Form", "Threat", "AESUOC"]
@@ -340,6 +352,53 @@ def sides_view(summary):
     text.append("\n")
     text.append_text(_side_line("Defense", summary["defense"]))
     text.append("\n\nThe player's team's rounds in the sampled games, not their own stats.", style=DIM)
+    return text
+
+
+def guns_view(summary):
+    """Kills by weapon, pistol-round record and round win rate by buy type across the sampled games."""
+    if not _usable(summary):
+        return _no_history(summary)
+    stats = summary.get("stats") or {}
+    guns, pistol, buys = stats.get("guns"), stats.get("pistol"), stats.get("buys")
+    if guns is None and pistol is None and buys is None:
+        return Text("Weapon and round data isn't in this cached summary yet; it fills in on the next refresh.", style=DIM)
+    text = Text(f"Guns, last {stats.get('games') or summary['games']} games\n\n", style="bold")
+    kills = sorted(((w, k, h) for w, (k, h) in (guns or {}).items() if k or h), key=lambda t: (-t[1], -t[2], t[0]))
+    total = sum(k for _, k, _ in kills)
+    if total:
+        text.append(f"{'':<9}{'kills':>5}  {'share':<20}{'rounds':>6}  per 100\n", style=DIM)
+        for weapon, count, held in kills[:GUN_ROWS]:
+            rate = f"{100 * count / held:.0f}" if held >= GUN_RATE_MIN_HELD else "—"
+            text.append(f"{weapons.weapon_name(weapon):<9}{count:>5}  ")
+            text.append(bar(count / total, 14) + f"{held:>6}  {rate:>7}\n")
+        if len(kills) > GUN_ROWS:
+            text.append(f"+{len(kills) - GUN_ROWS} more weapons\n", style=DIM)
+        text.append("Per 100 = kills per 100 rounds started with it.\n", style=DIM)
+    else:
+        text.append("No weapon kills recorded.\n", style=DIM)
+    text.append("\nPistol rounds\n", style="bold")
+    if pistol and pistol.get("rounds"):
+        text.append("Team won ")
+        text.append(f"{pistol['won']}/{pistol['rounds']}", style=wr_style(percent(pistol["won"], pistol["rounds"])))
+        text.append(f" ({percent(pistol['won'], pistol['rounds']):.0f}%)   you {pistol['kills']} kills, {pistol['deaths']} deaths\n")
+    else:
+        text.append("None recorded.\n", style=DIM)
+    text.append("\nBy buy (team's average loadout)\n", style="bold")
+    shown = False
+    for band in match_stats.BUY_TYPES:
+        record = (buys or {}).get(band)
+        if not record or not record["rounds"]:
+            continue
+        shown = True
+        win = percent(record["won"], record["rounds"])
+        text.append(f"{BUY_LABELS[band]:<9}{record['rounds']:>4} rounds  ")
+        text.append(f"{win:>3.0f}% won", style=wr_style(win))
+        text.append(f"   {record['kills'] / record['rounds']:.2f} kills/round\n")
+    if not shown:
+        text.append("No economy data recorded.\n", style=DIM)
+    else:
+        text.append("Eco < 1500, full >= 3500 per player; pistol rounds left out.\n", style=DIM)
     return text
 
 
