@@ -21,6 +21,7 @@ from textual.widgets import Button, ContentSwitcher, DataTable, Footer, Static
 
 import history
 import lobby_store
+import past_games
 from lobby_data import DemoSource, LobbyModel, LobbyReset, Status
 import player_profile
 from tui_views import (COLUMNS, GRAPHS, LOBBY_GRAPHS, agents_view, card_text, fingerprint, form_view, heat_view,
@@ -99,7 +100,7 @@ class HistoryScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="history-box"):
-            yield Static(f"Saved lobbies ({len(self.entries)}) · Enter opens one · Esc closes", id="history-title")
+            yield Static(f"Saved lobbies ({len(self.entries)}) · Enter opens one · i imports past games · Esc closes", id="history-title")
             if self.entries:
                 yield DataTable(id="history-table", cursor_type="row", zebra_stripes=True)
             else:
@@ -114,7 +115,8 @@ class HistoryScreen(ModalScreen):
         for entry in self.entries:
             summary = entry["summary"]
             table.add_row(time.strftime("%d %b %H:%M", time.localtime(entry["started_at"])), result_text(entry["result"]),
-                          entry["map_name"] or "—", entry["mode"] or "—", STATE_LABELS.get(entry["state"], entry["state"]),
+                          entry["map_name"] or "—", entry["mode"] or "—",
+                          "Imported" if entry.get("imported") else STATE_LABELS.get(entry["state"], entry["state"]),
                           summary.get("you") or "—", summary.get("ally_avg") or "—", summary.get("enemy_avg") or "—",
                           key=entry["path"])
         table.focus()
@@ -175,6 +177,7 @@ class LobbyApp(App):
         Binding("s", "next_scatter", "Scatter pairing"),
         Binding("h", "history", "Saved lobbies"),
         Binding("l", "live", "Live lobby"),
+        Binding("i", "import_past", "Import past games"),
         *[Binding(str(number), f"graph('{key}')", label) for number, (key, label) in enumerate(GRAPHS, 1)],
     ]
 
@@ -609,6 +612,33 @@ class LobbyApp(App):
             self.notify("Saving is off for this session.", severity="warning")
             return
         self.push_screen(HistoryScreen(lobby_store.list_saved(self.store_dir)), self._open_saved)
+
+    def action_import_past(self):
+        """Rebuild lobbies for games you played without the TUI, from match details already on disk."""
+        if not self.store_dir:
+            self.notify("Saving is off for this session.", severity="warning")
+            return
+        me = next((r.puuid for r in self.live_model.rows.values() if r.is_self), None)
+        puuids = lobby_store.self_puuids(self.store_dir) | ({me} if me else set())
+        if not puuids:
+            self.notify("Can't tell who you are yet: open a lobby (or save one) first.", severity="warning")
+            return
+        self.notify("Importing past games from the cache…")
+        self._import_worker(puuids)
+
+    @work(thread=True, exclusive=True, group="import")
+    def _import_worker(self, puuids):
+        try:
+            saved = past_games.import_past(history.CACHE_DIR, self.store_dir, puuids,
+                                           self.source.agent_names, self.source.map_names)
+            message, severity = (f"Imported {saved} past game{'s' if saved != 1 else ''}. Press h to see them."
+                                 if saved else "No new past games found in the cache."), "information"
+        except Exception as exc:  # a bad cache file must not take the screen down
+            message, severity = f"Import failed: {exc!r}", "error"
+        try:
+            self.call_from_thread(self.notify, message, severity=severity)
+        except Exception:  # the app closed while importing
+            pass
 
     async def _open_saved(self, path):
         if not path:

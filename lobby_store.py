@@ -63,6 +63,38 @@ def save(store_dir, snapshot):
     return path
 
 
+def save_past(store_dir, snapshot):
+    """Write a reconstructed lobby of a finished game unless that game is already saved; True when written.
+
+    The file is dated to the game's start (not now), so pruning drops the oldest games first and an import can
+    never push out a newer live save. The caller prunes once at the end.
+    """
+    path = os.path.join(store_dir, snapshot_id(snapshot.get("match_id"), snapshot["started_at"]) + ".json")
+    if os.path.exists(path):
+        return False
+    _write(path, snapshot)
+    try:
+        os.utime(path, (snapshot["started_at"], snapshot["started_at"]))
+    except OSError:
+        pass
+    return True
+
+
+def self_puuids(store_dir):
+    """The puuids marked as you in any saved lobby (normally one account), so a past-games import knows who you are."""
+    found = set()
+    try:
+        names = [n for n in os.listdir(store_dir) if n.endswith(".json")]
+    except OSError:
+        return found
+    for name in names:
+        data = _read(os.path.join(store_dir, name))
+        for row in (data or {}).get("rows") or []:
+            if isinstance(row, dict) and row.get("is_self") and row.get("puuid"):
+                found.add(row["puuid"])
+    return found
+
+
 def prune(store_dir, keep=MAX_SAVED):
     try:
         names = [n for n in os.listdir(store_dir) if n.endswith(".json")]
@@ -91,7 +123,8 @@ def list_saved(store_dir, limit=100):
         entries.append({"path": path, "started_at": data.get("started_at") or 0, "saved_at": data.get("saved_at") or 0,
                         "state": data.get("state", ""), "map_name": data.get("map_name", ""),
                         "mode": data.get("mode", ""), "summary": data.get("summary") or {},
-                        "result": data.get("result"), "players": len(data["rows"])})
+                        "result": data.get("result"), "players": len(data["rows"]),
+                        "imported": bool(data.get("imported"))})
     entries.sort(key=lambda e: e["started_at"], reverse=True)
     return entries[:limit]
 

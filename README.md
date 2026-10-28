@@ -169,6 +169,11 @@ you're looking at it; the live lobby keeps loading behind it.
 * A saved lobby is exactly what was on screen, so streamer mode's hidden names stay hidden. The files are local
   (`cache/lobbies/`, git-ignored), contain other players' names and match data, and are never uploaded; delete the
   folder to clear them. The newest 200 are kept. `--demo` saves to `cache/lobbies-demo/` instead.
+* **Import past games (`i`):** rebuilds a saved lobby for each game you played without the TUI that is still in the
+  match cache (`cache/matches/`), newest first, up to 40 per press. No network. Each lobby has the ten players, agents,
+  teams, the ranks they held in that game and the result; a player's history is built from the other cached matches
+  from before that game, so players we never fetched show no history. Season stats, peak rank, RR and premade groups
+  can't be recovered. Games already saved are left alone, and they are listed as `Imported`.
 * Menus (party) screens aren't saved, and a lobby you weren't running the TUI for can't be recovered afterwards.
 
 Use a **separate venv**: Textual needs `rich>=14.2` and `Pygments>=2.19.2`, while `requirements.txt` pins older ones.
