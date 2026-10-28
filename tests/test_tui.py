@@ -588,3 +588,24 @@ def test_agent_select_alone_is_not_saved(tmp_path):
         assert os.listdir(tmp_path) == []
 
     asyncio.run(main())
+
+
+def test_threat_column_and_strip_show_and_the_t_sort_orders_by_threat():
+    async def scenario(app, pilot):
+        table = app.query_one("#players", DataTable)
+        labels = [str(table.columns[key].label) for key in app._column_keys]
+        assert labels[-2:] == ["Threat", "AESUOC"]
+        assert text_of(app.query_one("#summary", Static)).splitlines()[-1].startswith("ENEMY THREATS")
+        scores = [(app._threats.get(r.puuid) or {}).get("score") for r in app.model.ordered]
+        assert any(score is not None for score in scores)
+        for _ in range(len(tui.SORTS)):  # cycle to the Threat sort
+            await pilot.press("o")
+            if tui.SORTS[app.sort_index][0] == "threat":
+                break
+        await pilot.pause(0.1)
+        shown = [(app._threats.get(r.puuid) or {}).get("score") or -1 for r in app._shown_rows()]
+        assert shown == sorted(shown, reverse=True)
+        await pilot.press("f", "f")  # hide the allies, then check a late refresh doesn't trip over missing rows
+        app._refresh_prints()
+
+    run(scenario)

@@ -144,3 +144,41 @@ def archetype(axes, games=None):
                 "rough": rough}
     return {"label": passing[0][1], "score": passing[0][0], "also": passing[1][1] if len(passing) > 1 else None,
             "trait": trait, "rough": rough}
+
+
+# --- threat flags -------------------------------------------------------------------------
+# Who in this lobby to respect. The level comes from ACS and ADR, because tools/moneyball.py found those the only
+# team stats that added anything to a first-half score when predicting the second half; K/D and KAST are left out as
+# too noisy. The "Entry" and "Aim" tags are not predictive claims: first blood wins ~68% of rounds, and headshot
+# percentage is the most repeatable stat measured (split-half r about 0.33), so a player who stands out on either is
+# worth knowing about. Everything is relative to the lobby and rough with few games (drawn with a "?").
+THREAT_HIGH = 0.85  # lobby percentile of the ACS/ADR average at or above which a player is a high threat
+THREAT_WATCH = 0.70
+TAG_MIN = 0.80  # lobby percentile for the Entry and Aim tags
+THREAT_MIN_PLAYERS = 4  # fewer players with data than this and a percentile means nothing
+
+
+def threat_flags(profiles):
+    """{key: {"score", "level" ("high" / "watch" / None), "tags" (["Entry", "Aim"] as earned), "rough"} or None}.
+
+    profiles is {key: derive(...) or None}. A key is None when it has no profile or the lobby has too few players
+    with data to rank anyone."""
+    pools = {rate: [p[rate] for p in profiles.values() if p and p.get(rate) is not None]
+             for rate in ("acs", "adr", "first_blood", "hs")}
+    out = {key: None for key in profiles}
+    for key, profile in profiles.items():
+        if not profile:
+            continue
+        parts = [_percentile(profile[rate], pools[rate]) for rate in ("acs", "adr")
+                 if profile.get(rate) is not None and len(pools[rate]) >= THREAT_MIN_PLAYERS]
+        if not parts:
+            continue
+        score = mean(parts)
+        tags = []
+        for tag, rate in (("Entry", "first_blood"), ("Aim", "hs")):
+            value = profile.get(rate)
+            if value and len(pools[rate]) >= THREAT_MIN_PLAYERS and _percentile(value, pools[rate]) >= TAG_MIN:
+                tags.append(tag)
+        out[key] = {"score": score, "level": "high" if score >= THREAT_HIGH else "watch" if score >= THREAT_WATCH
+                    else None, "tags": tags, "rough": profile["games"] < DIM_BELOW_GAMES}
+    return out

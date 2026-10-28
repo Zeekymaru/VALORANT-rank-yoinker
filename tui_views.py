@@ -18,7 +18,7 @@ GRAPHS = [("form", "Form"), ("sides", "Atk/Def"), ("agents", "Agents"), ("teams"
           ("profile", "Profile"), ("heat", "Heatmap"), ("scatter", "Scatter"), ("compare", "Compare")]
 LOBBY_GRAPHS = ("teams", "heat", "scatter")  # about the whole lobby, not the selected player
 # the last column is the fingerprint: one block per radar axis (Aim Entry Survival Utility Objective Consistency)
-COLUMNS = ["", "Agent", "Name", "Rank", "RR", "Peak", "HS", "WR", "Lvl", "ΔRR", "Recent", "Form", "AESUOC"]
+COLUMNS = ["", "Agent", "Name", "Rank", "RR", "Peak", "HS", "WR", "Lvl", "ΔRR", "Recent", "Form", "Threat", "AESUOC"]
 BAR_WIDTH = 20
 SPARK = "▁▂▃▄▅▆▇█"
 GREEN = (90, 225, 110)
@@ -128,12 +128,38 @@ def hs_text(row):
     return Text("N/A" if row.stats_state == "done" else "", style=DIM)
 
 
-def row_cells(row, axes=None):
+THREAT_RGB = {"high": RED, "watch": (255, 165, 40)}
+TAG_RGB = (110, 200, 235)
+
+
+def threat_text(flag, full=False):
+    """'▲▲ Entry' for a high threat, '▲' to watch, plus any tags; '?' marks a rough guess from few games."""
+    if not flag or not (flag["level"] or flag["tags"]):
+        return Text("")
+    rough = "dim " if flag["rough"] else ""
+    text = Text()
+    if flag["level"]:
+        text.append("▲▲" if flag["level"] == "high" else "▲", style=rough + "bold " + rgb_style(THREAT_RGB[flag["level"]]))
+    for tag in flag["tags"]:
+        text.append((" " if text.plain else "") + tag, style=rough + rgb_style(TAG_RGB))
+    if flag["rough"]:
+        text.append(" ?", style=DIM)
+    if full and flag["level"]:
+        text.append(f"   ACS/ADR higher than {flag['score'] * 100:.0f}% of this lobby", style=DIM)
+    return text
+
+
+def lobby_threats(rows):
+    """{puuid: threat flag or None} for every row."""
+    return profile.threat_flags(lobby_profiles(rows))
+
+
+def row_cells(row, axes=None, threat=None):
     """The row's cells, in COLUMNS order. axes are the player's lobby percentiles (for the fingerprint)."""
     return [
         party_text(row), agent_text(row), name_text(row), rank_text(row), Text(_num(row.rr)),
         peak_text(row), hs_text(row), wr_text(row), Text(_num(row.level)), delta_text(row),
-        recent_text(row), form_text(row), fingerprint(axes, _few_games(row.history)),
+        recent_text(row), form_text(row), threat_text(threat), fingerprint(axes, _few_games(row.history)),
     ]
 
 
@@ -208,7 +234,7 @@ def recent_block(summary, agent_names, map_name="", axes=None):
     return text
 
 
-def card_text(row, agent_names, map_name="", axes=None):
+def card_text(row, agent_names, map_name="", axes=None, threat=None):
     """Everything about one player for the card view: identity, rank, season stats, then recent history."""
     text = Text()
     if row.party:
@@ -241,6 +267,9 @@ def card_text(row, agent_names, map_name="", axes=None):
         text.append("history …", style=DIM)
     else:
         text.append_text(recent_block(row.history, agent_names, map_name, axes))
+        if threat and (threat["level"] or threat["tags"]):
+            text.append("\nThreat ", style=DIM)
+            text.append_text(threat_text(threat, full=True))
     return text
 
 
@@ -413,7 +442,7 @@ def rr_view(summary):
 
 
 SORTS = (("default", "Default"), ("tier", "Rank"), ("acs", "ACS"), ("adr", "ADR"), ("kd", "K/D"), ("kast", "KAST"),
-         ("first_blood", "First bloods"))
+         ("first_blood", "First bloods"), ("threat", "Threat"))
 FILTERS = (("all", "Everyone"), ("ally", "Your team"), ("enemy", "Enemies"))
 
 
@@ -426,6 +455,9 @@ def sort_filter_rows(rows, sort_key="default", filter_key="all"):
         return shown
     if sort_key == "tier":
         values = {r.puuid: r.tier if isinstance(r.tier, int) and r.tier > 0 else None for r in shown}
+    elif sort_key == "threat":
+        threats = lobby_threats(rows)
+        values = {r.puuid: (threats.get(r.puuid) or {}).get("score") for r in shown}
     else:
         profiles = lobby_profiles(rows)
         values = {r.puuid: (profiles.get(r.puuid) or {}).get(sort_key) for r in shown}
@@ -447,6 +479,21 @@ def team_strip(rows, premades_known=True):
                  if premades_known and (label == "YOUR TEAM" or s["premades"]) else "premades n/a"]
         lines.append(f"{label:<11}" + " · ".join(parts))
     return Text("\n".join(lines))
+
+
+def threat_strip(rows, threats):
+    """One line naming the enemy players flagged as a threat, highest first (empty when nobody is)."""
+    flagged = [(threats[r.puuid]["score"], r) for r in rows
+               if not r.ally and threats.get(r.puuid) and (threats[r.puuid]["level"] or threats[r.puuid]["tags"])]
+    text = Text("ENEMY THREATS ", style="bold")
+    for index, (_, row) in enumerate(sorted(flagged, key=lambda item: -item[0])[:3]):
+        text.append(" · " if index else "")
+        text.append(row.name.split("#")[0] or "?")
+        text.append(" ")
+        text.append_text(threat_text(threats[row.puuid]))
+    if not flagged:
+        text.append("none flagged yet", style=DIM)
+    return text
 
 
 # --- profile radar ------------------------------------------------------------------------
@@ -895,9 +942,9 @@ def leaders_view(rows, selected=None):
     return text
 
 
-def detail_view(row, rows, agent_names, map_name, axes):
+def detail_view(row, rows, agent_names, map_name, axes, threat=None):
     """The list view's detail strip, two parts: (card + lobby leaders, profile) for the selected row."""
     if row is None:
         return Text("No player selected yet.", style=DIM), Text("")
-    left = Group(card_text(row, agent_names, map_name, axes), Text(""), leaders_view(rows, row.puuid))
+    left = Group(card_text(row, agent_names, map_name, axes, threat), Text(""), leaders_view(rows, row.puuid))
     return left, profile_view(rows, row.puuid)

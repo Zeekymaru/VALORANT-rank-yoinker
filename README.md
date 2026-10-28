@@ -176,6 +176,11 @@ you're looking at it; the live lobby keeps loading behind it.
 * **Dodges:** a lobby is saved only once the game has started. Agent select on its own may be a dodge, so it isn't saved.
   Premade counts are only meaningful for your own side live (the client doesn't reveal the enemy's groups); the enemy line
   and imported lobbies say `premades n/a` rather than `0`.
+* **Threat flags:** a `Threat` column, a card line and an `ENEMY THREATS` line under the team summary. `▲▲` marks a player whose
+  average ACS/ADR is in the top 15% of this lobby and `▲` the next 15%; `Entry` (first-blood rate) and `Aim` (headshot %)
+  tags appear for players in the top 20% on those. ACS and ADR were chosen because `tools/moneyball.py` found them the only
+  team stats that added anything beyond the score; K/D and KAST are not used. Everything is relative to the lobby, needs at
+  least 4 players with data, and shows a `?` when the player has fewer than 3 games. `o` also sorts by threat.
 * **Import past games (`i`):** rebuilds a saved lobby for each game you played without the TUI that is still in the
   match cache (`cache/matches/`), newest first, up to 40 per press. No network. Each lobby has the ten players, agents,
   teams, the ranks they held in that game and the result; a player's history is built from the other cached matches

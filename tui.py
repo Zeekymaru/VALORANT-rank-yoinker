@@ -25,7 +25,7 @@ import past_games
 from lobby_data import DemoSource, LobbyModel, LobbyReset, Status
 import player_profile
 from tui_views import (COLUMNS, GRAPHS, LOBBY_GRAPHS, agents_view, card_text, fingerprint, form_view, heat_view,
-                       compare_view, lobby_axes, sort_filter_rows, SORTS, FILTERS, profile_view, row_cells, rr_series, rr_view, scatter_caption, scatter_fallback,
+                       compare_view, lobby_axes, lobby_threats, threat_strip, threat_text, sort_filter_rows, SORTS, FILTERS, profile_view, row_cells, rr_series, rr_view, scatter_caption, scatter_fallback,
                        scatter_points, sides_view, detail_view, team_stats, team_strip, teams_view, _few_games)
 
 try:  # optional: real charts for the RR trend (pip install -r requirements-tui-charts.txt)
@@ -165,7 +165,7 @@ class LobbyApp(App):
     #status { width: 1fr; height: 3; padding: 0 1; background: $boost; content-align: left middle; }
     #btn-view { min-width: 22; }
     LobbyApp.-viewing #status { background: $warning-darken-2; }
-    #summary { height: 2; padding: 0 1; }
+    #summary { height: 3; padding: 0 1; }
     #body { height: 1fr; }
     #views { width: 3fr; }
     #players { height: auto; max-height: 14; }
@@ -216,6 +216,7 @@ class LobbyApp(App):
         self._column_keys = []
         self._cards = {}
         self._axes = {}  # puuid -> lobby percentiles, for the fingerprints
+        self._threats = {}  # puuid -> threat flag (see player_profile.threat_flags)
         self.scatter_index = 0
         self.sort_index = 0  # into SORTS: how the players table is ordered
         self.filter_index = 0  # into FILTERS: which team the players table shows
@@ -310,15 +311,20 @@ class LobbyApp(App):
     def _rebuild_table(self):
         table = self.query_one("#players", DataTable)
         table.clear()
-        self._axes = lobby_axes(self.model.ordered)
+        self._refresh_lobby_numbers()
         shown = self._shown_rows()
         for row in shown:
-            table.add_row(*row_cells(row, self._axes.get(row.puuid)), key=row.puuid)
+            table.add_row(*row_cells(row, self._axes.get(row.puuid), self._threats.get(row.puuid)), key=row.puuid)
         puuids = [row.puuid for row in shown]
         if self.selected not in puuids:
             self.selected = puuids[0] if puuids else None
         if puuids:
             table.move_cursor(row=puuids.index(self.selected))
+
+    def _refresh_lobby_numbers(self):
+        """Percentiles and threat flags are ranks within the lobby, so any new history can change all of them."""
+        self._axes = lobby_axes(self.model.ordered)
+        self._threats = lobby_threats(self.model.ordered)
 
     def _shown_rows(self):
         return sort_filter_rows(self.model.ordered, SORTS[self.sort_index][0], FILTERS[self.filter_index][0])
@@ -352,7 +358,8 @@ class LobbyApp(App):
         self._mark_selected()
 
     def _card_content(self, row):
-        return card_text(row, self.agent_names, self.model.map_name, self._axes.get(row.puuid))
+        return card_text(row, self.agent_names, self.model.map_name, self._axes.get(row.puuid),
+                         self._threats.get(row.puuid))
 
     def _update_row(self, puuid):
         row = self.model.rows.get(puuid)
@@ -360,7 +367,7 @@ class LobbyApp(App):
             return
         table = self.query_one("#players", DataTable)
         if any(r.puuid == puuid for r in self._shown_rows()):  # a row the filter hides isn't in the table
-            for column_key, cell in zip(self._column_keys, row_cells(row, self._axes.get(puuid))):
+            for column_key, cell in zip(self._column_keys, row_cells(row, self._axes.get(puuid), self._threats.get(puuid))):
                 table.update_cell(puuid, column_key, cell, update_width=True)
         card = self._cards.get(puuid)
         if card is not None:
@@ -369,11 +376,14 @@ class LobbyApp(App):
 
     def _refresh_prints(self):
         """A player's rank in the lobby changes whenever anyone's history arrives, so redo every fingerprint."""
-        self._axes = lobby_axes(self.model.ordered)
+        self._refresh_lobby_numbers()
         table = self.query_one("#players", DataTable)
+        shown = {row.puuid for row in self._shown_rows()}  # a row the filter hides isn't in the table
         for row in self.model.ordered:
             axes = self._axes.get(row.puuid)
-            table.update_cell(row.puuid, self._column_keys[-1], fingerprint(axes, _few_games(row.history)))
+            if row.puuid in shown:
+                table.update_cell(row.puuid, self._column_keys[-1], fingerprint(axes, _few_games(row.history)))
+                table.update_cell(row.puuid, self._column_keys[-2], threat_text(self._threats.get(row.puuid)))
             card = self._cards.get(row.puuid)
             if card is not None:
                 card.update(self._card_content(row))
@@ -467,6 +477,8 @@ class LobbyApp(App):
                        (("sort", SORTS, self.sort_index), ("show", FILTERS, self.filter_index)) if i)
         strip = team_strip(model.ordered, premades_known=not (self.viewing or {}).get("imported"))
         strip.append(view, style="bold" if view else "")
+        strip.append("\n")
+        strip.append_text(threat_strip(model.ordered, self._threats))
         self.query_one("#summary", Static).update(strip)
 
     def show_graph(self, key):
@@ -494,7 +506,8 @@ class LobbyApp(App):
         """The strip under the list: the selected player's card, profile and the lobby leaders."""
         try:
             left, right = detail_view(self.model.rows.get(self.selected), self.model.ordered, self.agent_names,
-                                      self.model.map_name, self._axes.get(self.selected))
+                                      self.model.map_name, self._axes.get(self.selected),
+                                      self._threats.get(self.selected))
             self.query_one("#detail-card", Static).update(left)
             self.query_one("#detail-more", Static).update(right)
         except NoMatches:  # shutting down
@@ -712,7 +725,7 @@ class LobbyApp(App):
     async def _show_model(self):
         """Rebuild both views from self.model (the live lobby or a saved one)."""
         self.selected = None
-        self._axes = lobby_axes(self.model.ordered)
+        self._refresh_lobby_numbers()
         self._rebuild_table()
         await self._rebuild_cards()
         self._refresh_chrome()

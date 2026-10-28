@@ -61,7 +61,7 @@ def test_row_cells_match_the_columns():
     cells = tui_views.row_cells(loaded_row())
     assert len(cells) == len(tui_views.COLUMNS)
     assert [c.plain for c in cells] == ["■", "Jett", "Zeek#1", "Gold 3", "40", "Plat 1 (e7a3)", "22", "51 (30)",
-                                        "120", "+18", "67% 2/3", "● ○ ● ", ""]
+                                        "120", "+18", "67% 2/3", "● ○ ● ", "", ""]
 
 
 def test_cells_while_loading_and_when_data_is_missing():
@@ -377,3 +377,41 @@ def test_team_strip_does_not_claim_zero_premades_where_they_cannot_be_known():
     lines = tui_views.team_strip(rows).plain.splitlines()
     assert lines[1].endswith("premades n/a")  # the enemy's groups aren't visible live
     assert all(line.endswith("premades n/a") for line in tui_views.team_strip(rows, premades_known=False).plain.splitlines())
+
+
+def _threat_profile(acs, adr, first_blood=0.1, hs=0.2, games=5):
+    return {"acs": acs, "adr": adr, "first_blood": first_blood, "hs": hs, "games": games}
+
+
+def test_threat_flags_rank_acs_and_adr_within_the_lobby():
+    profiles = {f"p{i}": _threat_profile(150 + 20 * i, 100 + 12 * i) for i in range(10)}
+    profiles["none"] = None
+    flags = tui_views.profile.threat_flags(profiles)
+    assert flags["none"] is None
+    # ten evenly spaced players sit at the 5th, 15th ... 95th percentile: the top two are high, the next watch
+    assert [flags[f"p{i}"]["level"] for i in (9, 8, 7, 6, 0)] == ["high", "high", "watch", None, None]
+    assert flags["p9"]["score"] > flags["p7"]["score"] > flags["p0"]["score"]
+
+
+def test_threat_tags_and_the_rough_marker_and_the_small_lobby_rule():
+    profiles = {f"p{i}": _threat_profile(200, 130, first_blood=0.05 + 0.01 * i, hs=0.1 + 0.02 * i, games=2)
+                for i in range(10)}
+    flags = tui_views.profile.threat_flags(profiles)
+    assert flags["p9"]["tags"] == ["Entry", "Aim"] and flags["p0"]["tags"] == [] and flags["p9"]["rough"] is True
+    assert tui_views.threat_text(flags["p9"]).plain.endswith("Entry Aim ?")
+    few = tui_views.profile.threat_flags({f"p{i}": _threat_profile(200 + i, 100) for i in range(3)})
+    assert all(flag is None for flag in few.values())  # three players with data is too few to rank anyone
+
+
+def test_threat_text_and_strip_name_the_enemy_threats_only():
+    rows = [loaded_row(puuid=f"p{i}", name=f"N{i}#1", ally=i < 5, history=_with_stats(damage=4000 + 1500 * i, score=9000 + 1500 * i))
+            for i in range(10)]
+    threats = tui_views.lobby_threats(rows)
+    strip = tui_views.threat_strip(rows, threats).plain
+    assert strip.startswith("ENEMY THREATS") and "N9" in strip and "N0" not in strip
+    assert tui_views.threat_strip(rows[:5], tui_views.lobby_threats(rows[:5])).plain.endswith("none flagged yet")
+    card = tui_views.card_text(rows[9], NAMES, "Ascent", None, threats["p9"]).plain
+    assert "Threat ▲▲" in card and "higher than" in card
+    assert "Threat" not in tui_views.card_text(rows[0], NAMES, "Ascent", None, threats["p0"]).plain
+    ordered = [r.puuid for r in tui_views.sort_filter_rows(rows, "threat")]
+    assert ordered[0] == "p9" and ordered[-1] == "p0"
