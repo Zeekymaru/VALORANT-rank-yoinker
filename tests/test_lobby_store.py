@@ -116,3 +116,13 @@ def test_a_later_save_keeps_the_result_already_filled_in(tmp_path):
 @pytest.mark.parametrize("attack,defense,score", [([0, 0], [0, 0], ""), ([13, 20], [0, 3], "13-10")])
 def test_result_score_from_side_rounds(attack, defense, score):
     assert lobby_store._result_of({"won": True, "attack": attack, "defense": defense})["score"] == score
+
+
+def test_history_filters_hide_imports_and_dodges_by_default():
+    entry = lambda state, imported=False, result=None: {"state": state, "imported": imported, "result": result}  # noqa: E731
+    entries = [entry("INGAME", result={"won": True}), entry("INGAME", result={"won": False}), entry("INGAME"),
+               entry("PREGAME"), entry("INGAME", imported=True, result={"won": True})]
+    count = lambda mode: len(lobby_store.filter_entries(entries, mode))  # noqa: E731
+    assert (count("played"), count("all"), count("won"), count("lost"), count("imported"), count("dodged")) == \
+        (3, 5, 2, 1, 1, 1)
+    assert count("nonsense") == 3  # an unknown mode falls back to played games

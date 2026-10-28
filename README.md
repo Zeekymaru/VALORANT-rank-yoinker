@@ -169,6 +169,13 @@ you're looking at it; the live lobby keeps loading behind it.
 * A saved lobby is exactly what was on screen, so streamer mode's hidden names stay hidden. The files are local
   (`cache/lobbies/`, git-ignored), contain other players' names and match data, and are never uploaded; delete the
   folder to clear them. The newest 200 are kept. `--demo` saves to `cache/lobbies-demo/` instead.
+* **Sort and show (`o`, `f`):** `o` cycles how the players table is ordered (default, rank, ACS, ADR, K/D, KAST, first
+  bloods; best first, players without data last) and `f` cycles Everyone / Your team / Enemies. Percentiles, leaders and
+  team averages are still worked out over the whole lobby. In the saved-lobbies list `f` cycles Played games (the
+  default) / Everything / Wins / Losses / Imported / Agent select only.
+* **Dodges:** a lobby is saved only once the game has started. Agent select on its own may be a dodge, so it isn't saved.
+  Premade counts are only meaningful for your own side live (the client doesn't reveal the enemy's groups); the enemy line
+  and imported lobbies say `premades n/a` rather than `0`.
 * **Import past games (`i`):** rebuilds a saved lobby for each game you played without the TUI that is still in the
   match cache (`cache/matches/`), newest first, up to 40 per press. No network. Each lobby has the ten players, agents,
   teams, the ranks they held in that game and the result; a player's history is built from the other cached matches

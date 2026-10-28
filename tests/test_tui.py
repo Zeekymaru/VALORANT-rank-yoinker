@@ -523,3 +523,68 @@ def test_compare_graph_pits_you_against_the_selected_player():
         assert "You vs" in body and "Consistency" in body and "gap" in body
 
     run(scenario)
+
+
+def test_sort_and_show_keys_reorder_and_filter_the_players_table():
+    async def scenario(app, pilot):
+        table = app.query_one("#players", DataTable)
+        default = [row.puuid for row in app.model.ordered]
+        await pilot.press("o")  # sort: Rank
+        await pilot.pause(0.1)
+        order = [app._shown_rows()[i].puuid for i in range(table.row_count)]
+        tiers = [app.model.rows[p].tier or 0 for p in order]
+        assert tiers == sorted(tiers, reverse=True) and "sort: Rank" in text_of(app.query_one("#summary", Static))
+        await pilot.press("f", "f")  # show: Your team, then Enemies
+        await pilot.pause(0.1)
+        assert table.row_count == sum(1 for r in app.model.ordered if not r.ally)
+        assert "show: Enemies" in text_of(app.query_one("#summary", Static))
+        assert app.selected in [r.puuid for r in app._shown_rows()]
+        await pilot.press("f")  # back to everyone
+        await pilot.pause(0.1)
+        assert table.row_count == len(default)
+
+    run(scenario)
+
+
+def test_saved_lobby_list_defaults_to_played_games_and_f_widens_it(tmp_path):
+    import lobby_store
+
+    async def scenario(app, pilot):
+        await pilot.pause(0.3)
+        base = lobby_store.list_saved(str(tmp_path))[0]
+        for name, extra in (("dodge", {"state": "PREGAME"}), ("imp", {"imported": True})):
+            snapshot = lobby_store.load(base["path"])
+            snapshot.update(extra, match_id=name, started_at=base["started_at"] - 100)
+            lobby_store.save(str(tmp_path), snapshot)
+        await pilot.press("h")
+        await pilot.pause(0.3)
+        table = app.screen.query_one("#history-table", DataTable)
+        assert table.row_count == 1
+        await pilot.press("f")  # Everything
+        await pilot.pause(0.1)
+        assert table.row_count == 3 and "Everything (3 of 3)" in text_of(app.screen.query_one("#history-title", Static))
+
+    run(scenario, store_dir=str(tmp_path))
+
+
+def test_agent_select_alone_is_not_saved(tmp_path):
+    from lobby_data import LobbyReset, PlayerRow
+
+    class AgentSelect:
+        agent_names, map_names = {}, {}
+
+        def run(self, emit, stop):
+            rows = [PlayerRow(puuid=f"p{i}", name=f"A{i}#1", ally=True, agent="Jett", stats_state="done",
+                              history_state="done") for i in range(2)]
+            emit(LobbyReset(state="PREGAME", rows=rows, map_name="Ascent"))
+            stop.wait(30)
+
+    async def main():
+        app = tui.LobbyApp(AgentSelect(), store_dir=str(tmp_path))
+        async with app.run_test(size=SIZE) as pilot:
+            await pilot.pause(0.5)
+            app._dirty = True
+            app._flush()
+        assert os.listdir(tmp_path) == []
+
+    asyncio.run(main())

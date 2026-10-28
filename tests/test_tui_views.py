@@ -356,3 +356,24 @@ def test_compare_view_explains_what_is_missing():
     assert "has no performance counts" in plain(tui_views.compare_view([me, pending], "p2"))
     gone = loaded_row(puuid="me", is_self=True, history=history._unavailable())
     assert "aren't loaded yet" in plain(tui_views.compare_view([gone, other], "p2"))
+
+
+def test_sort_filter_rows_orders_best_first_and_leaves_missing_data_last():
+    rows = [loaded_row(puuid="p1", ally=True, tier=10, history=_with_stats()),
+            loaded_row(puuid="p2", ally=False, tier=21, history=_with_stats(damage=12000)),
+            loaded_row(puuid="p3", ally=False, tier=14, history=history._unavailable())]
+    ids = lambda **kw: [r.puuid for r in tui_views.sort_filter_rows(rows, **kw)]  # noqa: E731
+    assert ids() == ["p1", "p2", "p3"]
+    assert ids(sort_key="tier") == ["p2", "p3", "p1"]
+    assert ids(sort_key="adr") == ["p2", "p1", "p3"]  # p2 dealt more damage; p3 has no counts, so it goes last
+    assert ids(sort_key="adr", filter_key="enemy") == ["p2", "p3"]
+    assert ids(filter_key="ally") == ["p1"]
+    assert len(rows) == 3  # the input is untouched
+
+
+def test_team_strip_does_not_claim_zero_premades_where_they_cannot_be_known():
+    rows = [loaded_row(puuid="a", ally=True, party=0), loaded_row(puuid="e", ally=False, party=0)]
+    assert tui_views.team_strip(rows).plain.splitlines()[0].endswith("0 premades")
+    lines = tui_views.team_strip(rows).plain.splitlines()
+    assert lines[1].endswith("premades n/a")  # the enemy's groups aren't visible live
+    assert all(line.endswith("premades n/a") for line in tui_views.team_strip(rows, premades_known=False).plain.splitlines())

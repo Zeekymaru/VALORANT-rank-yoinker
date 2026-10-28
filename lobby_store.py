@@ -129,6 +129,24 @@ def list_saved(store_dir, limit=100):
     return entries[:limit]
 
 
+HISTORY_FILTERS = (("played", "Played games"), ("all", "Everything"), ("won", "Wins"), ("lost", "Losses"),
+                   ("imported", "Imported"), ("dodged", "Agent select only"))
+
+
+def filter_entries(entries, mode="played"):
+    """list_saved() entries matching a HISTORY_FILTERS mode. "Played" leaves out imports and lobbies that never
+    got past agent select (dodged or abandoned games)."""
+    def played(e):
+        return e["state"] == "INGAME" and not e.get("imported")
+    tests = {
+        "played": played, "all": lambda e: True, "imported": lambda e: bool(e.get("imported")),
+        "dodged": lambda e: e["state"] == "PREGAME" and not e.get("imported"),
+        "won": lambda e: bool(e["result"]) and e["result"].get("won") is True,
+        "lost": lambda e: bool(e["result"]) and e["result"].get("won") is False,
+    }
+    return [e for e in entries if tests.get(mode, tests["played"])(e)]
+
+
 def load(path):
     """The snapshot dict, or None when the file is missing, corrupt or from another version."""
     data = _read(path)

@@ -412,8 +412,29 @@ def rr_view(summary):
     return text
 
 
-def team_strip(rows):
-    """Two-line summary above the table: one line per team."""
+SORTS = (("default", "Default"), ("tier", "Rank"), ("acs", "ACS"), ("adr", "ADR"), ("kd", "K/D"), ("kast", "KAST"),
+         ("first_blood", "First bloods"))
+FILTERS = (("all", "Everyone"), ("ally", "Your team"), ("enemy", "Enemies"))
+
+
+def sort_filter_rows(rows, sort_key="default", filter_key="all"):
+    """The rows the players table shows: filtered by team, then ordered best-first by one stat (missing data last).
+
+    Lobby-wide numbers (percentiles, leaders, team averages) are still worked out over every row, not just these."""
+    shown = [r for r in rows if filter_key == "all" or r.ally == (filter_key == "ally")]
+    if sort_key == "default":
+        return shown
+    if sort_key == "tier":
+        values = {r.puuid: r.tier if isinstance(r.tier, int) and r.tier > 0 else None for r in shown}
+    else:
+        profiles = lobby_profiles(rows)
+        values = {r.puuid: (profiles.get(r.puuid) or {}).get(sort_key) for r in shown}
+    return sorted(shown, key=lambda r: (values[r.puuid] is None, -(values[r.puuid] or 0)))  # stable: ties keep order
+
+
+def team_strip(rows, premades_known=True):
+    """Two-line summary above the table: one line per team. Premade counts are only trustworthy live, and only
+    for your own side: the client doesn't reveal the enemy's groups, and a rebuilt (imported) lobby has none."""
     lines = []
     for label, group in (("YOUR TEAM", [r for r in rows if r.ally]), ("ENEMY TEAM", [r for r in rows if not r.ally])):
         if not group:
@@ -422,7 +443,8 @@ def team_strip(rows):
         parts = [f"avg {s['avg_rank'] or '—'}",
                  f"recent WR {s['wr']}%" if s["wr"] is not None else "recent WR —",
                  f"Atk {s['attack']}% Def {s['defense']}%" if s["attack"] is not None else "Atk — Def —",
-                 f"{s['premades']} premade{'s' if s['premades'] != 1 else ''}"]
+                 f"{s['premades']} premade{'s' if s['premades'] != 1 else ''}"
+                 if premades_known and (label == "YOUR TEAM" or s["premades"]) else "premades n/a"]
         lines.append(f"{label:<11}" + " · ".join(parts))
     return Text("\n".join(lines))
 

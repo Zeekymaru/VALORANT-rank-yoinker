@@ -25,7 +25,7 @@ import past_games
 from lobby_data import DemoSource, LobbyModel, LobbyReset, Status
 import player_profile
 from tui_views import (COLUMNS, GRAPHS, LOBBY_GRAPHS, agents_view, card_text, fingerprint, form_view, heat_view,
-                       compare_view, lobby_axes, profile_view, row_cells, rr_series, rr_view, scatter_caption, scatter_fallback,
+                       compare_view, lobby_axes, sort_filter_rows, SORTS, FILTERS, profile_view, row_cells, rr_series, rr_view, scatter_caption, scatter_fallback,
                        scatter_points, sides_view, detail_view, team_stats, team_strip, teams_view, _few_games)
 
 try:  # optional: real charts for the RR trend (pip install -r requirements-tui-charts.txt)
@@ -83,9 +83,10 @@ class CardView(VerticalScroll):
 
 
 class HistoryScreen(ModalScreen):
-    """The saved lobbies, newest first. Enter opens one; Escape or h closes."""
+    """The saved lobbies, newest first. Enter opens one; f changes what is listed; Escape or h closes."""
 
-    BINDINGS = [Binding("escape", "close", "Close"), Binding("h", "close", "Close", show=False)]
+    BINDINGS = [Binding("escape", "close", "Close"), Binding("h", "close", "Close", show=False),
+                Binding("f", "next_filter", "Filter")]
     DEFAULT_CSS = """
     HistoryScreen { align: center middle; }
     #history-box { width: 92%; max-width: 130; height: 80%; border: round $accent; background: $surface; padding: 0 1; }
@@ -97,29 +98,45 @@ class HistoryScreen(ModalScreen):
     def __init__(self, entries, **kwargs):
         super().__init__(**kwargs)
         self.entries = entries
+        self.filter_index = 0  # into lobby_store.HISTORY_FILTERS; starts on played games only
 
     def compose(self) -> ComposeResult:
         with Vertical(id="history-box"):
-            yield Static(f"Saved lobbies ({len(self.entries)}) · Enter opens one · i imports past games · Esc closes", id="history-title")
-            if self.entries:
-                yield DataTable(id="history-table", cursor_type="row", zebra_stripes=True)
-            else:
-                yield Static("Nothing saved yet. A lobby is saved automatically once its ranks and history have "
-                             "loaded, and when it ends.", id="history-empty")
+            yield Static(id="history-title")
+            yield DataTable(id="history-table", cursor_type="row", zebra_stripes=True)
+            yield Static(id="history-empty")
 
     def on_mount(self):
-        if not self.entries:
-            return
+        self.query_one("#history-table", DataTable).add_columns(*self.COLUMNS)
+        self._fill()
+
+    def _fill(self):
+        mode, label = lobby_store.HISTORY_FILTERS[self.filter_index]
+        shown = lobby_store.filter_entries(self.entries, mode)
+        self.query_one("#history-title", Static).update(
+            f"Saved lobbies · {label} ({len(shown)} of {len(self.entries)}) · Enter opens · f filter · "
+            f"i imports past games · Esc closes")
+        empty = self.query_one("#history-empty", Static)
+        empty.update("Nothing here. Press f for another filter." if self.entries else
+                     "Nothing saved yet. A lobby is saved automatically once its ranks and history have loaded, "
+                     "and when it ends.")
+        empty.display = not shown
         table = self.query_one("#history-table", DataTable)
-        table.add_columns(*self.COLUMNS)
-        for entry in self.entries:
+        table.display = bool(shown)
+        table.clear()
+        for entry in shown:
             summary = entry["summary"]
             table.add_row(time.strftime("%d %b %H:%M", time.localtime(entry["started_at"])), result_text(entry["result"]),
                           entry["map_name"] or "—", entry["mode"] or "—",
                           "Imported" if entry.get("imported") else STATE_LABELS.get(entry["state"], entry["state"]),
                           summary.get("you") or "—", summary.get("ally_avg") or "—", summary.get("enemy_avg") or "—",
                           key=entry["path"])
-        table.focus()
+        if shown:
+            table.focus()
+
+    def action_next_filter(self):
+        self.filter_index = (self.filter_index + 1) % len(lobby_store.HISTORY_FILTERS)
+        self._fill()
 
     def on_data_table_row_highlighted(self, event):
         event.stop()  # the app's own handler is about the players table
@@ -178,6 +195,8 @@ class LobbyApp(App):
         Binding("h", "history", "Saved lobbies"),
         Binding("l", "live", "Live lobby"),
         Binding("i", "import_past", "Import past games"),
+        Binding("o", "next_sort", "Sort"),
+        Binding("f", "next_filter", "Show"),
         *[Binding(str(number), f"graph('{key}')", label) for number, (key, label) in enumerate(GRAPHS, 1)],
     ]
 
@@ -198,6 +217,8 @@ class LobbyApp(App):
         self._cards = {}
         self._axes = {}  # puuid -> lobby percentiles, for the fingerprints
         self.scatter_index = 0
+        self.sort_index = 0  # into SORTS: how the players table is ordered
+        self.filter_index = 0  # into FILTERS: which team the players table shows
 
     # --- layout -------------------------------------------------------------------------
 
@@ -290,13 +311,29 @@ class LobbyApp(App):
         table = self.query_one("#players", DataTable)
         table.clear()
         self._axes = lobby_axes(self.model.ordered)
-        for row in self.model.ordered:
+        shown = self._shown_rows()
+        for row in shown:
             table.add_row(*row_cells(row, self._axes.get(row.puuid)), key=row.puuid)
-        puuids = [row.puuid for row in self.model.ordered]
+        puuids = [row.puuid for row in shown]
         if self.selected not in puuids:
             self.selected = puuids[0] if puuids else None
         if puuids:
             table.move_cursor(row=puuids.index(self.selected))
+
+    def _shown_rows(self):
+        return sort_filter_rows(self.model.ordered, SORTS[self.sort_index][0], FILTERS[self.filter_index][0])
+
+    def action_next_sort(self):
+        self.sort_index = (self.sort_index + 1) % len(SORTS)
+        self._rebuild_table()
+        self._refresh_chrome()
+        self._refresh_graph()
+
+    def action_next_filter(self):
+        self.filter_index = (self.filter_index + 1) % len(FILTERS)
+        self._rebuild_table()
+        self._refresh_chrome()
+        self._refresh_graph()
 
     async def _rebuild_cards(self):
         view = self.query_one("#cards", CardView)
@@ -322,8 +359,9 @@ class LobbyApp(App):
         if row is None:
             return
         table = self.query_one("#players", DataTable)
-        for column_key, cell in zip(self._column_keys, row_cells(row, self._axes.get(puuid))):
-            table.update_cell(puuid, column_key, cell, update_width=True)
+        if any(r.puuid == puuid for r in self._shown_rows()):  # a row the filter hides isn't in the table
+            for column_key, cell in zip(self._column_keys, row_cells(row, self._axes.get(puuid))):
+                table.update_cell(puuid, column_key, cell, update_width=True)
         card = self._cards.get(puuid)
         if card is not None:
             card.update(self._card_content(row))
@@ -359,8 +397,8 @@ class LobbyApp(App):
         if puuid in self.model.rows and puuid != self.selected:
             self.selected = puuid
             table = self.query_one("#players", DataTable)
-            order = [row.puuid for row in self.model.ordered]
-            if table.cursor_row != order.index(puuid):
+            order = [row.puuid for row in self._shown_rows()]
+            if puuid in order and table.cursor_row != order.index(puuid):
                 table.move_cursor(row=order.index(puuid))
             self._mark_selected()
             self._refresh_graph()
@@ -425,7 +463,11 @@ class LobbyApp(App):
             self.query_one("#status", Static).update(Text(line, style="bold"))
         else:
             self.query_one("#status", Static).update(Text(f"{head or 'Waiting'}{counts}   {model.status}"))
-        self.query_one("#summary", Static).update(team_strip(model.ordered))
+        view = "".join(f"   {label}: {names[i][1]}" for label, names, i in
+                       (("sort", SORTS, self.sort_index), ("show", FILTERS, self.filter_index)) if i)
+        strip = team_strip(model.ordered, premades_known=not (self.viewing or {}).get("imported"))
+        strip.append(view, style="bold" if view else "")
+        self.query_one("#summary", Static).update(strip)
 
     def show_graph(self, key):
         self.graph = key
@@ -585,7 +627,7 @@ class LobbyApp(App):
     def _flush(self):
         """Save the live lobby if anything changed since the last save (never raises: saving is a convenience)."""
         model = self.live_model
-        if not self.store_dir or not self._dirty or model.state not in ("INGAME", "PREGAME") or not model.rows:
+        if not self.store_dir or not self._dirty or model.state != "INGAME" or not model.rows:  # agent select alone may be a dodge
             return
         self._dirty = False
         try:
@@ -653,7 +695,8 @@ class LobbyApp(App):
                                mode=snapshot.get("mode", ""), server=snapshot.get("server", ""),
                                match_id=snapshot.get("match_id", "")))
         self.model = model
-        self.viewing = {"started_at": snapshot.get("started_at") or 0, "result": snapshot.get("result")}
+        self.viewing = {"started_at": snapshot.get("started_at") or 0, "result": snapshot.get("result"),
+                        "imported": bool(snapshot.get("imported"))}
         self.agent_names, self.map_names = snapshot.get("agent_names") or {}, snapshot.get("map_names") or {}
         self.add_class("-viewing")
         await self._show_model()
